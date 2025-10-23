@@ -13,7 +13,10 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-ENV DATABASE_URL="postgresql://articdbm:articdbm@postgres/articdbm" \
+# Setup py4web apps folder with built-in apps
+RUN py4web setup apps --yes
+
+ENV DATABASE_URL="sqlite://manager.db" \
     REDIS_HOST="redis" \
     REDIS_PORT="6379" \
     REDIS_PASSWORD="" \

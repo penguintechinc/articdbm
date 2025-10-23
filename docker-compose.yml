@@ -49,7 +49,7 @@ services:
       dockerfile: Dockerfile
     container_name: articdbm-manager
     environment:
-      DATABASE_URL: postgresql://articdbm:articdbm@postgres/articdbm
+      DATABASE_URL: sqlite://manager.db
       REDIS_HOST: redis
       REDIS_PORT: 6379
       SESSION_SECRET: ${SESSION_SECRET:-supersecret123}

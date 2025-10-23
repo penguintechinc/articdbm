@@ -1,1 +1,0 @@
-# _default app for ArticDBM homepage

@@ -1,6 +1,6 @@
 flask==2.3.3
-py4web==1.20230507.1
-pydal==20230521.1
+py4web>=1.20241201.1
+pydal>=20241201.1
 redis==5.0.1
 psycopg2-binary==2.9.9
 asyncio==3.4.3
