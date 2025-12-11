@@ -3,8 +3,23 @@ name: Build Multi-Architecture Containers
 on:
   push:
     branches: ['**']
+    paths:
+      - 'proxy/**'
+      - 'manager/**'
+      - 'DB-Manager/**'
+      - '.version'
+      - '.github/workflows/build-containers.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'proxy/**'
+      - 'manager/**'
+      - 'DB-Manager/**'
+      - '.version'
+      - '.github/workflows/build-containers.yml'
   release:
     types: [published]
+  workflow_dispatch:
 
 env:
   REGISTRY: ghcr.io
@@ -21,23 +36,43 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Generate epoch64 timestamp
+        id: timestamp
+        run: |
+          EPOCH64=$(date +%s)
+          echo "epoch64=$EPOCH64" >> $GITHUB_OUTPUT
+
+      - name: Check version file
+        id: version
+        run: |
+          if [ -f .version ]; then
+            VERSION=$(cat .version | tr -d '[:space:]')
+            SEMVER=$(echo "$VERSION" | cut -d'.' -f1-3)
+            echo "semver=$SEMVER" >> $GITHUB_OUTPUT
+
+            if git diff --name-only HEAD^ HEAD 2>/dev/null | grep -q "^.version$"; then
+              echo "changed=true" >> $GITHUB_OUTPUT
+            else
+              echo "changed=false" >> $GITHUB_OUTPUT
+            fi
+          else
+            echo "semver=0.0.0" >> $GITHUB_OUTPUT
+            echo "changed=false" >> $GITHUB_OUTPUT
+          fi
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
       - name: Log in to Container Registry
+        if: github.event_name != 'pull_request'
         uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Extract version from .version file
-        id: version
-        run: |
-          VERSION=$(cat .version | tr -d '\n')
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-          echo "Version: $VERSION"
 
       - name: Extract metadata for proxy
         id: meta-proxy
@@ -45,11 +80,12 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ env.PROXY_IMAGE_NAME }}
           tags: |
-            type=ref,event=branch,suffix=-alpha
-            type=ref,event=pr,suffix=-alpha
-            type=raw,value=beta,enable={{is_default_branch}}
-            type=raw,value=latest,enable=${{ github.event_name == 'release' }}
-            type=raw,value=${{ steps.version.outputs.version }},enable=${{ github.event_name == 'release' }}
+            type=raw,value=alpha-${{ steps.timestamp.outputs.epoch64 }},enable=${{ github.ref != 'refs/heads/main' && steps.version.outputs.changed != 'true' }}
+            type=raw,value=beta-${{ steps.timestamp.outputs.epoch64 }},enable=${{ github.ref == 'refs/heads/main' && steps.version.outputs.changed != 'true' }}
+            type=raw,value=v${{ steps.version.outputs.semver }}-alpha,enable=${{ github.ref != 'refs/heads/main' && steps.version.outputs.changed == 'true' }}
+            type=raw,value=v${{ steps.version.outputs.semver }}-beta,enable=${{ github.ref == 'refs/heads/main' && steps.version.outputs.changed == 'true' }}
+            type=semver,pattern={{version}}
+            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
 
       - name: Build and push proxy image
         uses: docker/build-push-action@v5
@@ -57,11 +93,27 @@ jobs:
           context: ./proxy
           file: ./proxy/Dockerfile
           platforms: linux/amd64,linux/arm64
-          push: true
+          push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta-proxy.outputs.tags }}
           labels: ${{ steps.meta-proxy.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Run Trivy vulnerability scanner on proxy
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ env.REGISTRY }}/${{ env.PROXY_IMAGE_NAME }}:${{ github.sha }}
+          format: 'sarif'
+          output: 'trivy-proxy-results.sarif'
+        if: github.event_name != 'pull_request'
+        continue-on-error: true
+
+      - name: Upload Trivy scan results
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: 'trivy-proxy-results.sarif'
+        if: github.event_name != 'pull_request'
+        continue-on-error: true
 
   build-manager:
     runs-on: ubuntu-latest
@@ -72,23 +124,43 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Generate epoch64 timestamp
+        id: timestamp
+        run: |
+          EPOCH64=$(date +%s)
+          echo "epoch64=$EPOCH64" >> $GITHUB_OUTPUT
+
+      - name: Check version file
+        id: version
+        run: |
+          if [ -f .version ]; then
+            VERSION=$(cat .version | tr -d '[:space:]')
+            SEMVER=$(echo "$VERSION" | cut -d'.' -f1-3)
+            echo "semver=$SEMVER" >> $GITHUB_OUTPUT
+
+            if git diff --name-only HEAD^ HEAD 2>/dev/null | grep -q "^.version$"; then
+              echo "changed=true" >> $GITHUB_OUTPUT
+            else
+              echo "changed=false" >> $GITHUB_OUTPUT
+            fi
+          else
+            echo "semver=0.0.0" >> $GITHUB_OUTPUT
+            echo "changed=false" >> $GITHUB_OUTPUT
+          fi
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
       - name: Log in to Container Registry
+        if: github.event_name != 'pull_request'
         uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Extract version from .version file
-        id: version
-        run: |
-          VERSION=$(cat .version | tr -d '\n')
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-          echo "Version: $VERSION"
 
       - name: Extract metadata for manager
         id: meta-manager
@@ -96,11 +168,12 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ env.MANAGER_IMAGE_NAME }}
           tags: |
-            type=ref,event=branch,suffix=-alpha
-            type=ref,event=pr,suffix=-alpha
-            type=raw,value=beta,enable={{is_default_branch}}
-            type=raw,value=latest,enable=${{ github.event_name == 'release' }}
-            type=raw,value=${{ steps.version.outputs.version }},enable=${{ github.event_name == 'release' }}
+            type=raw,value=alpha-${{ steps.timestamp.outputs.epoch64 }},enable=${{ github.ref != 'refs/heads/main' && steps.version.outputs.changed != 'true' }}
+            type=raw,value=beta-${{ steps.timestamp.outputs.epoch64 }},enable=${{ github.ref == 'refs/heads/main' && steps.version.outputs.changed != 'true' }}
+            type=raw,value=v${{ steps.version.outputs.semver }}-alpha,enable=${{ github.ref != 'refs/heads/main' && steps.version.outputs.changed == 'true' }}
+            type=raw,value=v${{ steps.version.outputs.semver }}-beta,enable=${{ github.ref == 'refs/heads/main' && steps.version.outputs.changed == 'true' }}
+            type=semver,pattern={{version}}
+            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
 
       - name: Build and push manager image
         uses: docker/build-push-action@v5
@@ -108,11 +181,27 @@ jobs:
           context: ./manager
           file: ./manager/Dockerfile
           platforms: linux/amd64,linux/arm64
-          push: true
+          push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta-manager.outputs.tags }}
           labels: ${{ steps.meta-manager.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Run Trivy vulnerability scanner on manager
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ env.REGISTRY }}/${{ env.MANAGER_IMAGE_NAME }}:${{ github.sha }}
+          format: 'sarif'
+          output: 'trivy-manager-results.sarif'
+        if: github.event_name != 'pull_request'
+        continue-on-error: true
+
+      - name: Upload Trivy scan results
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: 'trivy-manager-results.sarif'
+        if: github.event_name != 'pull_request'
+        continue-on-error: true
 
   build-summary:
     runs-on: ubuntu-latest
@@ -126,62 +215,41 @@ jobs:
       - name: Extract version from .version file
         id: version
         run: |
-          VERSION=$(cat .version | tr -d '\n')
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          if [ -f .version ]; then
+            VERSION=$(cat .version | tr -d '[:space:]')
+            SEMVER=$(echo "$VERSION" | cut -d'.' -f1-3)
+            echo "semver=$SEMVER" >> $GITHUB_OUTPUT
+          else
+            echo "semver=0.0.0" >> $GITHUB_OUTPUT
+          fi
 
       - name: Build Summary
         run: |
-          echo "## 🚀 ArticDBM Container Build Summary" >> $GITHUB_STEP_SUMMARY
+          echo "## ArticDBM Multi-Container Build Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Build Information" >> $GITHUB_STEP_SUMMARY
-          echo "- **Version**: \`${{ steps.version.outputs.version }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Version**: \`v${{ steps.version.outputs.semver }}\`" >> $GITHUB_STEP_SUMMARY
           echo "- **Branch**: \`${{ github.ref_name }}\`" >> $GITHUB_STEP_SUMMARY
           echo "- **Commit**: \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
           echo "- **Event**: \`${{ github.event_name }}\`" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Container Images Built" >> $GITHUB_STEP_SUMMARY
-          echo "- **Proxy**: \`${{ env.REGISTRY }}/${{ env.PROXY_IMAGE_NAME }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "- **Manager**: \`${{ env.REGISTRY }}/${{ env.MANAGER_IMAGE_NAME }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Proxy** (Go): \`${{ env.REGISTRY }}/${{ env.PROXY_IMAGE_NAME }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Manager** (Python py4web): \`${{ env.REGISTRY }}/${{ env.MANAGER_IMAGE_NAME }}\`" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Architectures" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ linux/amd64" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ linux/arm64" >> $GITHUB_STEP_SUMMARY
+          echo "### Multi-Architecture Support" >> $GITHUB_STEP_SUMMARY
+          echo "- linux/amd64 (x86_64)" >> $GITHUB_STEP_SUMMARY
+          echo "- linux/arm64 (ARM64)" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          
-          if [[ "${{ github.ref_name }}" == "main" ]]; then
-            echo "### 🏷️ Tags Applied" >> $GITHUB_STEP_SUMMARY
-            echo "- \`beta\` (main branch)" >> $GITHUB_STEP_SUMMARY
-          elif [[ "${{ github.event_name }}" == "release" ]]; then
-            echo "### 🏷️ Tags Applied" >> $GITHUB_STEP_SUMMARY
-            echo "- \`latest\` (release)" >> $GITHUB_STEP_SUMMARY
-            echo "- \`${{ steps.version.outputs.version }}\` (version)" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "### 🏷️ Tags Applied" >> $GITHUB_STEP_SUMMARY
-            echo "- \`${{ github.ref_name }}-alpha\` (feature branch)" >> $GITHUB_STEP_SUMMARY
-          fi
-          
+          echo "### Security Scanning" >> $GITHUB_STEP_SUMMARY
+          echo "- Trivy vulnerability scanning enabled" >> $GITHUB_STEP_SUMMARY
+          echo "- CodeQL analysis available" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### 📦 Usage Examples" >> $GITHUB_STEP_SUMMARY
-          if [[ "${{ github.event_name }}" == "release" ]]; then
-            echo "\`\`\`bash" >> $GITHUB_STEP_SUMMARY
-            echo "# Pull latest release" >> $GITHUB_STEP_SUMMARY
-            echo "docker pull ${{ env.REGISTRY }}/${{ env.PROXY_IMAGE_NAME }}:latest" >> $GITHUB_STEP_SUMMARY
-            echo "docker pull ${{ env.REGISTRY }}/${{ env.MANAGER_IMAGE_NAME }}:latest" >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "# Or specific version" >> $GITHUB_STEP_SUMMARY
-            echo "docker pull ${{ env.REGISTRY }}/${{ env.PROXY_IMAGE_NAME }}:${{ steps.version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
-            echo "docker pull ${{ env.REGISTRY }}/${{ env.MANAGER_IMAGE_NAME }}:${{ steps.version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
-            echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
-          elif [[ "${{ github.ref_name }}" == "main" ]]; then
-            echo "\`\`\`bash" >> $GITHUB_STEP_SUMMARY
-            echo "# Pull beta build from main branch" >> $GITHUB_STEP_SUMMARY
-            echo "docker pull ${{ env.REGISTRY }}/${{ env.PROXY_IMAGE_NAME }}:beta" >> $GITHUB_STEP_SUMMARY
-            echo "docker pull ${{ env.REGISTRY }}/${{ env.MANAGER_IMAGE_NAME }}:beta" >> $GITHUB_STEP_SUMMARY
-            echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "\`\`\`bash" >> $GITHUB_STEP_SUMMARY
-            echo "# Pull alpha build from feature branch" >> $GITHUB_STEP_SUMMARY
-            echo "docker pull ${{ env.REGISTRY }}/${{ env.PROXY_IMAGE_NAME }}:${{ github.ref_name }}-alpha" >> $GITHUB_STEP_SUMMARY
-            echo "docker pull ${{ env.REGISTRY }}/${{ env.MANAGER_IMAGE_NAME }}:${{ github.ref_name }}-alpha" >> $GITHUB_STEP_SUMMARY
-            echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
-          fi
+          echo "### Pull Examples" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`bash" >> $GITHUB_STEP_SUMMARY
+          echo "# Proxy service" >> $GITHUB_STEP_SUMMARY
+          echo "docker pull ${{ env.REGISTRY }}/${{ env.PROXY_IMAGE_NAME }}:latest" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "# Manager service" >> $GITHUB_STEP_SUMMARY
+          echo "docker pull ${{ env.REGISTRY }}/${{ env.MANAGER_IMAGE_NAME }}:latest" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY

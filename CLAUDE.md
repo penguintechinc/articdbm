@@ -1,13 +1,13 @@
-# 🤖 CLAUDE.md - ArticDBM Context
+# ArticDBM - Claude Code Context
 
 This document provides context and information for Claude Code when working with the ArticDBM project.
 
-## 📋 Project Overview
+## Project Overview
 
 **ArticDBM (Arctic Database Manager)** is a comprehensive enterprise-grade database proxy solution that provides:
 
 - **Multi-database support**: MySQL, PostgreSQL, MSSQL, MongoDB, Redis
-- **Advanced Security**: SQL injection detection, threat intelligence integration, authentication, authorization  
+- **Advanced Security**: SQL injection detection, threat intelligence integration, authentication, authorization
 - **Performance**: Optimized connection pooling, read/write splitting, load balancing, warmup
 - **Enterprise Auth**: API keys, temporary access tokens, IP whitelisting, rate limiting, TLS enforcement
 - **Threat Intelligence**: STIX/TAXII feeds, OpenIOC support, MISP integration, real-time blocking
@@ -15,7 +15,7 @@ This document provides context and information for Claude Code when working with
 - **High availability**: Cluster mode with shared configuration
 - **MSP Ready**: Multi-tenant support, usage-based billing, white-label capabilities
 
-## 🏗️ Project Structure
+## Project Structure
 
 ```
 ArticDBM/
@@ -36,7 +36,7 @@ ArticDBM/
 │   └── Dockerfile          # Manager container
 ├── docs/                   # Documentation
 │   ├── index.md           # Documentation homepage (lowercase exception)
-│   ├── USAGE.md           # Usage guide  
+│   ├── USAGE.md           # Usage guide
 │   ├── ARCHITECTURE.md    # Architecture details
 │   ├── THREAT-INTELLIGENCE.md  # Threat intelligence guide
 │   ├── USER-MANAGEMENT.md # Enhanced user management
@@ -47,14 +47,15 @@ ArticDBM/
 ├── docker-compose.yml     # Development environment
 ├── README.md             # Project readme
 ├── .TODO                 # Project requirements (original)
+├── .PLAN                 # Implementation plans and progress
 └── CLAUDE.md            # This file
 ```
 
-## 🔧 Technology Stack
+## Technology Stack
 
 ### Proxy (Go)
 - **Language**: Go 1.23.x (latest patch version)
-- **Database Drivers**: 
+- **Database Drivers**:
   - MySQL: `github.com/go-sql-driver/mysql`
   - PostgreSQL: `github.com/lib/pq`
   - MSSQL: `github.com/denisenkom/go-mssqldb`
@@ -77,7 +78,189 @@ ArticDBM/
 - **Cache/Config**: Redis
 - **Database**: PostgreSQL for manager data
 
-## 🚀 Development Workflow
+## Critical Development Rules
+
+### Development Philosophy: Safe, Stable, and Feature-Complete
+
+**NEVER take shortcuts or the "easy route" - ALWAYS prioritize safety, stability, and feature completeness**
+
+#### Core Principles
+- **No Quick Fixes**: Resist quick workarounds or partial solutions
+- **Complete Features**: Fully implemented with proper error handling and validation
+- **Safety First**: Security, data integrity, and fault tolerance are non-negotiable
+- **Stable Foundations**: Build on solid, tested components
+- **Future-Proof Design**: Consider long-term maintainability and scalability
+- **No Technical Debt**: Address issues properly the first time
+
+#### Red Flags (Never Do These)
+- Skipping input validation "just this once"
+- Hardcoding credentials or configuration
+- Ignoring error returns or exceptions
+- Commenting out failing tests to make CI pass
+- Deploying without proper testing
+- Using deprecated or unmaintained dependencies
+- Implementing partial features with "TODO" placeholders
+- Bypassing security checks for convenience
+- Assuming data is valid without verification
+- Leaving debug code or backdoors in production
+
+#### Quality Checklist Before Completion
+- All error cases handled properly
+- Unit tests cover all code paths
+- Integration tests verify component interactions
+- Security requirements fully implemented
+- Performance meets acceptable standards
+- Documentation complete and accurate
+- Code review standards met
+- No hardcoded secrets or credentials
+- Logging and monitoring in place
+- Build passes in containerized environment
+- No security vulnerabilities in dependencies
+- Edge cases and boundary conditions tested
+
+### Git Workflow
+- **NEVER commit automatically** unless explicitly requested by the user
+- **NEVER push to remote repositories** under any circumstances
+- **ONLY commit when explicitly asked** - never assume commit permission
+- Always use feature branches for development
+- Require pull request reviews for main branch
+- Automated testing must pass before merge
+
+### Local State Management (Crash Recovery)
+- **ALWAYS maintain local .PLAN and .TODO files** for crash recovery
+- **Keep .PLAN file updated** with current implementation plans and progress
+- **Keep .TODO file updated** with task lists and completion status
+- **Update these files in real-time** as work progresses
+- **Add to .gitignore**: Both .PLAN and .TODO files must be in .gitignore
+- **File format**: Use simple text format for easy recovery
+- **Automatic recovery**: Upon restart, check for existing files to resume work
+
+### Dependency Security Requirements
+- **ALWAYS check for Dependabot alerts** before every commit
+- **Monitor vulnerabilities via Socket.dev** for all dependencies
+- **Mandatory security scanning** before any dependency changes
+- **Fix all security alerts immediately** - no commits with outstanding vulnerabilities
+- **Regular security audits**: `npm audit`, `go mod audit`, `safety check`
+
+### Linting & Code Quality Requirements
+- **ALL code must pass linting** before commit - no exceptions
+- **Go**: golangci-lint (includes staticcheck, gosec, etc.)
+- **Python**: flake8, black, isort, mypy (type checking), bandit (security)
+- **Docker**: hadolint
+- **YAML**: yamllint
+- **Markdown**: markdownlint
+- **Shell**: shellcheck
+- **CodeQL**: All code must pass CodeQL security analysis
+- **PEP Compliance**: Python code must follow PEP 8, PEP 257 (docstrings), PEP 484 (type hints)
+
+### Build & Deployment Requirements
+- **NEVER mark tasks as completed until successful build verification**
+- All Go and Python builds MUST be executed within Docker containers
+- Use containerized builds for local development and CI/CD pipelines
+- Build failures must be resolved before task completion
+
+### Documentation Standards
+- **README.md**: Keep as overview and pointer to comprehensive docs/ folder
+- **docs/ folder**: Create comprehensive documentation for all aspects
+- **RELEASE-NOTES.md**: Maintain in docs/ folder, prepend new version releases to top
+- Update CLAUDE.md when adding significant context
+- **Build status badges**: Always include in README.md
+- **ASCII art**: Include catchy, project-appropriate ASCII art in README
+- **Company homepage**: Point to www.penguintech.io
+- **License**: All projects use Limited AGPL3 with preamble for fair use
+
+### File Size Limits
+- **Maximum file size**: 25,000 characters for ALL code and markdown files
+- **Split large files**: Decompose into modules, libraries, or separate documents
+- **CLAUDE.md exception**: Maximum 39,000 characters (only exception to 25K rule)
+- **Use Task Agents**: Utilize task agents (subagents) for efficiency when making changes to large files
+
+## Version Management System
+
+**Format**: `vMajor.Minor.Patch.build`
+- **Major**: Breaking changes, API changes, removed features
+- **Minor**: Significant new features and functionality additions
+- **Patch**: Minor updates, bug fixes, security patches
+- **Build**: Epoch64 timestamp of build time
+
+**Update Commands**:
+```bash
+./scripts/version/update-version.sh          # Increment build timestamp
+./scripts/version/update-version.sh patch    # Increment patch version
+./scripts/version/update-version.sh minor    # Increment minor version
+./scripts/version/update-version.sh major    # Increment major version
+```
+
+## PenguinTech License Server Integration
+
+All projects integrate with the centralized PenguinTech License Server at `https://license.penguintech.io` for feature gating and enterprise functionality.
+
+**IMPORTANT: License enforcement is ONLY enabled when project is marked as release-ready**
+- Development phase: All features available, no license checks
+- Release phase: License validation required, feature gating active
+
+**License Key Format**: `PENG-XXXX-XXXX-XXXX-XXXX-ABCD`
+
+**Core Endpoints**:
+- `POST /api/v2/validate` - Validate license
+- `POST /api/v2/features` - Check feature entitlements
+- `POST /api/v2/keepalive` - Report usage statistics
+
+**Environment Variables**:
+```bash
+# License configuration
+LICENSE_KEY=PENG-XXXX-XXXX-XXXX-XXXX-ABCD
+LICENSE_SERVER_URL=https://license.penguintech.io
+PRODUCT_NAME=articdbm
+
+# Release mode (enables license enforcement)
+RELEASE_MODE=false  # Development (default)
+RELEASE_MODE=true   # Production (explicitly set)
+```
+
+**License-Gated Features**:
+```python
+from shared.licensing import license_client, requires_feature
+from py4web import action
+
+@action('api/advanced/analytics')
+@requires_feature("advanced_analytics")
+def generate_advanced_report():
+    """Requires professional+ license"""
+    return {'report': analytics.generate_report()}
+```
+
+## WaddleAI Integration (Optional)
+
+For projects requiring AI capabilities, integrate with WaddleAI located at `~/code/WaddleAI`.
+
+**When to Use WaddleAI:**
+- Natural language processing (NLP)
+- Machine learning model inference
+- AI-powered features and automation
+- Intelligent data analysis
+- Chatbots and conversational interfaces
+
+**Integration Pattern:**
+- WaddleAI runs as separate microservice container
+- Communicate via REST API or gRPC
+- Environment variable configuration for API endpoints
+- License-gate AI features as enterprise functionality
+
+**ArticDBM AI Use Cases:**
+- ML-based anomaly detection for database queries
+- Intelligent threat detection patterns
+- Query optimization recommendations
+- Automated security policy suggestions
+
+## Development Workflow
+
+### Local Development Setup
+```bash
+git clone <repository-url>
+cd ArticDBM
+docker-compose up -d
+```
 
 ### Building and Testing
 ```bash
@@ -87,11 +270,33 @@ docker-compose up -d
 # Build proxy separately
 cd proxy && go build -o articdbm-proxy .
 
-# Run manager separately  
+# Run manager separately
 cd manager && python -m py4web run /app
 
-# Run tests (when implemented)
+# Run tests
 go test ./...
+```
+
+### Essential Commands
+```bash
+# Development
+make dev                      # Start development services
+make test                     # Run all tests
+make lint                     # Run linting
+make build                    # Build all services
+make clean                    # Clean build artifacts
+
+# Production
+make docker-build             # Build containers
+make docker-push              # Push to registry
+
+# Testing
+make test-unit               # Run unit tests
+make test-integration        # Run integration tests
+
+# License Management
+make license-validate        # Validate license
+make license-check-features  # Check available features
 ```
 
 ### Code Style
@@ -105,7 +310,7 @@ go test ./...
 - **Exception**: `index.md` remains lowercase as the documentation homepage
 - **Consistency**: This pattern applies to all `.md` files in `/docs/` directory
 
-## 🔒 Enhanced Security Features
+## Enhanced Security Features
 
 ### SQL Injection Detection
 - Pattern-based detection in `proxy/internal/security/checker.go`
@@ -137,12 +342,12 @@ go test ./...
 - **Time-Limited Permissions**: Automatic permission expiration
 - **Query Quotas**: Maximum queries per hour per database
 
-## 📊 Monitoring & Metrics
+## Monitoring & Metrics
 
 ### Prometheus Metrics
 Available at `:9090/metrics`:
 - `articdbm_active_connections` - Active connection count
-- `articdbm_total_queries` - Total queries processed  
+- `articdbm_total_queries` - Total queries processed
 - `articdbm_query_duration_seconds` - Query execution time
 - `articdbm_auth_failures_total` - Authentication failures
 - `articdbm_sql_injection_attempts_total` - Blocked injections
@@ -152,7 +357,7 @@ Available at `:9090/metrics`:
 - User activity tracking
 - IP address recording
 
-## 🔄 Configuration Management
+## Configuration Management
 
 ### Environment Variables (Proxy)
 Key variables in `proxy/internal/config/config.go`:
@@ -167,41 +372,7 @@ Key variables in `proxy/internal/config/config.go`:
 - Synced to Redis every 45-75 seconds
 - No proxy restart required for most changes
 
-## 🐛 Common Issues & Solutions
-
-### Connection Issues
-- Check port bindings in docker-compose
-- Verify backend database connectivity
-- Review firewall rules
-
-### Performance Issues  
-- Monitor connection pool utilization
-- Check backend database performance
-- Review query patterns in audit logs
-
-### Security Issues
-- Review SQL injection patterns
-- Check user permissions
-- Monitor authentication failures
-
-## 📝 Testing Approach
-
-### Unit Tests (To Be Implemented)
-- Go tests for proxy components
-- Python tests for manager API
-- Mock database connections
-
-### Integration Tests
-- Full docker-compose stack testing
-- Database protocol testing
-- Security feature validation
-
-### Performance Tests
-- Load testing with `mysqlslap`, `pgbench`
-- Connection pool testing
-- Latency measurements
-
-## ⚡ Performance Optimizations
+## Performance Optimizations
 
 ### Enhanced Connection Pooling
 - **Optimized Pool Settings**: 80% idle connections (vs 50%) for faster reuse
@@ -221,7 +392,7 @@ Key variables in `proxy/internal/config/config.go`:
 - **Cache Efficiency**: Redis-based auth caching with 5-minute TTL
 - **Reduced Allocations**: Minimized memory allocations in critical paths
 
-## 🏢 MSP & Enterprise Capabilities
+## MSP & Enterprise Capabilities
 
 ### Multi-Tenant Architecture
 - **Customer Isolation**: Separate API keys, rate limits, and database permissions per tenant
@@ -241,7 +412,73 @@ Key variables in `proxy/internal/config/config.go`:
 - **Security Automation**: Threat intelligence feeds with automatic blocking
 - **Usage Monitoring**: Comprehensive tracking for billing and compliance
 
-## 🚀 Deployment Patterns
+## Troubleshooting & Support
+
+### Common Issues
+
+#### Connection Issues
+- Check port bindings in docker-compose
+- Verify backend database connectivity
+- Review firewall rules
+
+#### Performance Issues
+- Monitor connection pool utilization
+- Check backend database performance
+- Review query patterns in audit logs
+
+#### Security Issues
+- Review SQL injection patterns
+- Check user permissions
+- Monitor authentication failures
+
+### Debug Commands
+```bash
+# Container debugging
+docker-compose logs -f proxy
+docker-compose logs -f manager
+
+# Full stack restart
+docker-compose down && docker-compose up -d
+
+# Connect to test databases
+mysql -h localhost -P 3307 -u testuser -p  # Direct to test MySQL
+mysql -h localhost -P 3306 -u testuser -p  # Through proxy
+
+# Check proxy metrics
+curl http://localhost:9090/metrics
+
+# Access manager API
+curl http://localhost:8000/api/health
+
+# License debugging
+make license-debug            # Test license server connectivity
+make license-validate         # Validate current license
+```
+
+### Support Resources
+- **Technical Documentation**: See `docs/` folder
+- **Integration Support**: support@penguintech.io
+- **Sales Inquiries**: sales@penguintech.io
+- **License Server Status**: https://status.penguintech.io
+
+## Testing Approach
+
+### Unit Tests
+- Go tests for proxy components
+- Python tests for manager API
+- Mock database connections
+
+### Integration Tests
+- Full docker-compose stack testing
+- Database protocol testing
+- Security feature validation
+
+### Performance Tests
+- Load testing with `mysqlslap`, `pgbench`
+- Connection pool testing
+- Latency measurements
+
+## Deployment Patterns
 
 ### Development
 - docker-compose with all services
@@ -254,21 +491,25 @@ Key variables in `proxy/internal/config/config.go`:
 - Redis cluster for HA
 - Load balancer for proxy instances
 
-## 🔮 Future Enhancements
+## Key Files to Know
 
-### Planned Features
-- Query caching layer
-- Enhanced MongoDB support
-- GraphQL API support
-- Machine learning-based anomaly detection
+### Critical Files
+- `proxy/main.go` - Main proxy entry point
+- `proxy/internal/config/config.go` - Configuration management
+- `manager/app.py` - Manager API and UI
+- `docker-compose.yml` - Development environment
 
-### Technical Debt
-- Add comprehensive unit tests
-- Implement graceful shutdown
-- Add configuration validation
-- Improve error handling
+### Configuration Files
+- `proxy/go.mod` - Go dependencies
+- `manager/requirements.txt` - Python dependencies
+- `.TODO` - Original requirements (keep updated)
+- `.PLAN` - Implementation plans and progress
 
-## 💡 Development Tips
+### Documentation
+- `README.md` - Main project documentation
+- `docs/` - Comprehensive documentation suite
+
+## Development Tips
 
 ### When Working with Proxy
 - Always check Redis connection first
@@ -290,44 +531,107 @@ Key variables in `proxy/internal/config/config.go`:
 3. Add Docker service for testing
 4. Update documentation
 
-## 🎯 Key Files to Know
+## Future Enhancements
 
-### Critical Files
-- `proxy/main.go` - Main proxy entry point
-- `proxy/internal/config/config.go` - Configuration management
-- `manager/app.py` - Manager API and UI
-- `docker-compose.yml` - Development environment
+### Planned Features
+- Query caching layer
+- Enhanced MongoDB support
+- GraphQL API support
+- Machine learning-based anomaly detection
 
-### Configuration Files
-- `proxy/go.mod` - Go dependencies
-- `manager/requirements.txt` - Python dependencies
-- `.TODO` - Original requirements (keep updated)
+### Technical Debt
+- Add comprehensive unit tests
+- Implement graceful shutdown
+- Add configuration validation
+- Improve error handling
 
-### Documentation
-- `README.md` - Main project documentation
-- `docs/` - Comprehensive documentation suite
+## CI/CD & Workflow Compliance
 
-## 🏃‍♂️ Quick Commands
+ArticDBM implements comprehensive CI/CD workflows with .WORKFLOW compliance standards for all three services (proxy, manager, db-manager).
 
+### Workflows Overview
+
+**build-containers.yml**: Multi-service container build with version detection and conditional tagging
+- Builds proxy (Go) and manager (Python) services
+- Monitors `.version` file for releases
+- Generates epoch64 timestamps
+- Multi-architecture support (amd64, arm64)
+- Trivy vulnerability scanning for both services
+
+**proxy-build.yml**: Specialized Go proxy build pipeline
+- golangci-lint + gosec security scanning
+- Coverage reporting to codecov
+- Conditional metadata tags based on version changes
+- Trivy container scanning
+
+**manager-build.yml**: Specialized Python manager build pipeline
+- flake8, black, isort, mypy type checking
+- bandit security scanning
+- PostgreSQL test database
+- Coverage reporting
+- Trivy container scanning
+
+**version-release.yml**: Automatic release creation
+- Triggers on `.version` file changes
+- Creates GitHub pre-releases
+- Validates semantic versioning
+- Prevents duplicate releases
+
+### Version Management
+
+**Format**: `vMajor.Minor.Patch` (e.g., `v1.2.3`)
+
+**Update Process**:
 ```bash
-# Full stack restart
-docker-compose down && docker-compose up -d
-
-# View logs
-docker-compose logs -f proxy
-docker-compose logs -f manager
-
-# Connect to test databases
-mysql -h localhost -P 3307 -u testuser -p  # Direct to test MySQL
-mysql -h localhost -P 3306 -u testuser -p  # Through proxy
-
-# Check proxy metrics
-curl http://localhost:9090/metrics
-
-# Access manager API
-curl http://localhost:8000/api/health
+echo "v1.2.4" > .version
+git add .version
+git commit -m "Release v1.2.4"
+git push origin main
 ```
 
+**Automatic Actions**:
+1. All three services rebuild with version tags
+2. GitHub pre-release created
+3. Build summary generated
+4. Containers tagged v1.2.4-beta (main) or v1.2.4-alpha (feature branches)
+
+### Image Tagging
+
+**Regular Builds** (no `.version` change):
+- Main branch: `beta-<unix-timestamp>`
+- Feature branches: `alpha-<unix-timestamp>`
+
+**Version Releases** (`.version` changed):
+- Main branch: `v<semver>-beta`
+- Feature branches: `v<semver>-alpha`
+
+**Release Tags**: `v<semver>` + `latest`
+
+### Security Scanning
+
+**Proxy (Go)**:
+- golangci-lint (multi-tool linting)
+- gosec (Go security)
+- Trivy (container vulnerability)
+
+**Manager (Python)**:
+- flake8 (style)
+- bandit (Python security)
+- mypy (type checking)
+- Trivy (container vulnerability)
+
+**Results**: All uploaded to GitHub Security tab as SARIF
+
+### Comprehensive Documentation
+
+- **[docs/WORKFLOWS.md](docs/WORKFLOWS.md)**: Complete workflow documentation
+- **[docs/STANDARDS.md](docs/STANDARDS.md)**: Development and CI/CD standards
+
 ---
+
+**Project Version**: See `.version` file
+**Last Updated**: 2025-12-11
+**Maintained by**: Penguin Tech Inc
+**License Server**: https://license.penguintech.io
 
 *This document should be updated as the project evolves. Keep it current with any architectural changes or new features.*
