@@ -1,0 +1,21 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: webui
+  namespace: articdbm
+  labels:
+    app: webui
+    version: v2.0
+spec:
+  type: LoadBalancer
+  selector:
+    app: webui
+  ports:
+  - name: http
+    port: 3000
+    targetPort: http
+    protocol: TCP
+  sessionAffinity: ClientIP
+  sessionAffinityConfig:
+    clientIP:
+      timeoutSeconds: 3600

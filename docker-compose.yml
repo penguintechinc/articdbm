@@ -1,9 +1,30 @@
 version: '3.8'
 
 services:
-  # Redis cache for configurations
+  # PostgreSQL for manager database
+  postgres:
+    image: postgres:15-bookworm
+    container_name: articdbm-postgres
+    environment:
+      POSTGRES_USER: articdbm
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-articdbm}
+      POSTGRES_DB: articdbm
+    expose:
+      - "5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - articdbm-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U articdbm -d articdbm"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis for caching and config distribution
   redis:
-    image: redis:7-alpine
+    image: redis:7-bookworm
     container_name: articdbm-redis
     expose:
       - "6379"
@@ -12,171 +33,73 @@ services:
     command: redis-server --appendonly yes
     networks:
       - articdbm-network
-
-  # PostgreSQL for manager configuration
-  postgres:
-    image: postgres:15-alpine
-    container_name: articdbm-postgres
-    environment:
-      POSTGRES_USER: articdbm
-      POSTGRES_PASSWORD: articdbm
-      POSTGRES_DB: articdbm
-    expose:
-      - "5432"
-    volumes:
-      - postgres-data:/var/lib/postgresql/data
-    networks:
-      - articdbm-network
-
-  # Nginx Reverse Proxy
-  nginx:
-    image: nginx:alpine
-    container_name: articdbm-nginx
-    ports:
-      - "8000"
-    volumes:
-      - ./nginx.conf:/etc/nginx/nginx.conf:ro
-    depends_on:
-      - manager
-    networks:
-      - articdbm-network
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
-  # ArticDBM Manager
+  # ArticDBM Manager (Flask API + gRPC)
   manager:
     build:
       context: ./manager
       dockerfile: Dockerfile
     container_name: articdbm-manager
     environment:
-      DATABASE_URL: sqlite://manager.db
-      REDIS_HOST: redis
-      REDIS_PORT: 6379
-      SESSION_SECRET: ${SESSION_SECRET:-supersecret123}
-    expose:
-      - "8000"
-    depends_on:
-      - redis
-      - postgres
-    networks:
-      - articdbm-network
-    restart: unless-stopped
-
-  # ArticDBM Proxy
-  proxy:
-    build:
-      context: ./proxy
-      dockerfile: Dockerfile
-    container_name: articdbm-proxy
-    environment:
-      REDIS_ADDR: redis:6379
-      MYSQL_ENABLED: "true"
-      MYSQL_PORT: 3306
-      POSTGRESQL_ENABLED: "true"
-      POSTGRESQL_PORT: 5432
-      MSSQL_ENABLED: "true"
-      MSSQL_PORT: 1433
-      MONGODB_ENABLED: "true"
-      MONGODB_PORT: 27017
-      REDIS_PROXY_ENABLED: "true"
-      REDIS_PROXY_PORT: 6380
-      SQL_INJECTION_DETECTION: "true"
-      MAX_CONNECTIONS: 1000
-      METRICS_PORT: 9090
-      MYSQL_BACKENDS: '[{"host":"test-mysql","port":3306,"type":"both","user":"root","password":"testpass","database":"testdb"}]'
-      POSTGRESQL_BACKENDS: '[{"host":"test-postgres","port":5432,"type":"both","user":"testuser","password":"testpass","database":"testdb"}]'
+      DATABASE_URL: postgresql://articdbm:${POSTGRES_PASSWORD:-articdbm}@postgres:5432/articdbm
+      REDIS_URL: redis://redis:6379/0
+      SECRET_KEY: ${SECRET_KEY:-dev-secret-key-change-in-production}
+      FLASK_ENV: ${FLASK_ENV:-production}
+      DEBUG: ${DEBUG:-false}
+      GRPC_PORT: 50051
+      REST_PORT: 8000
     ports:
-      - "3306"    # MySQL proxy
-      - "5432"    # PostgreSQL proxy
-      - "1433"    # MSSQL proxy
-      - "27017"   # MongoDB proxy
-      - "6380"    # Redis proxy
-      - "9090"    # Metrics
+      - "9000:8000"    # REST API
+      - "50054:50051"  # gRPC
     depends_on:
-      - redis
-      - manager
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     networks:
       - articdbm-network
     restart: unless-stopped
+    # healthcheck disabled temporarily for debugging
+    # healthcheck:
+    #   test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
+    #   interval: 10s
+    #   timeout: 5s
+    #   retries: 5
 
-  # Test MySQL database
-  test-mysql:
-    image: mysql:8.0
-    container_name: articdbm-test-mysql
+  # ArticDBM React WebUI
+  webui:
+    build:
+      context: ./webui
+      dockerfile: Dockerfile
+    container_name: articdbm-webui
     environment:
-      MYSQL_ROOT_PASSWORD: testpass
-      MYSQL_DATABASE: testdb
-      MYSQL_USER: testuser
-      MYSQL_PASSWORD: testpass
-    expose:
-      - "3306"
-    volumes:
-      - mysql-data:/var/lib/mysql
+      REACT_APP_API_URL: ${API_URL:-http://localhost:8000}
+      REACT_APP_GRPC_URL: ${GRPC_URL:-http://localhost:50051}
+      NODE_ENV: ${NODE_ENV:-production}
+    ports:
+      - "3000:3000"
+    depends_on:
+      manager:
+        condition: service_healthy
     networks:
       - articdbm-network
-
-  # Test PostgreSQL database
-  test-postgres:
-    image: postgres:15-alpine
-    container_name: articdbm-test-postgres
-    environment:
-      POSTGRES_USER: testuser
-      POSTGRES_PASSWORD: testpass
-      POSTGRES_DB: testdb
-    expose:
-      - "5432"
-    volumes:
-      - test-postgres-data:/var/lib/postgresql/data
-    networks:
-      - articdbm-network
-
-  # Test Redis
-  test-redis:
-    image: redis:7-alpine
-    container_name: articdbm-test-redis
-    expose:
-      - "6379"
-    networks:
-      - articdbm-network
-
-  # Test MongoDB
-  test-mongodb:
-    image: mongo:6.0
-    container_name: articdbm-test-mongodb
-    environment:
-      MONGO_INITDB_ROOT_USERNAME: testuser
-      MONGO_INITDB_ROOT_PASSWORD: testpass
-      MONGO_INITDB_DATABASE: testdb
-    expose:
-      - "27017"
-    volumes:
-      - mongodb-data:/data/db
-    networks:
-      - articdbm-network
-
-  # Test MSSQL
-  test-mssql:
-    image: mcr.microsoft.com/mssql/server:2022-latest
-    container_name: articdbm-test-mssql
-    environment:
-      ACCEPT_EULA: Y
-      SA_PASSWORD: TestPass123!
-      MSSQL_PID: Developer
-    expose:
-      - "1433"
-    volumes:
-      - mssql-data:/var/opt/mssql
-    networks:
-      - articdbm-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
 networks:
   articdbm-network:
     driver: bridge
 
 volumes:
-  redis-data:
   postgres-data:
-  mysql-data:
-  test-postgres-data:
-  mongodb-data:
-  mssql-data:
+  redis-data:

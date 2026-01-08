@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-**ArticDBM (Arctic Database Manager)** is a comprehensive enterprise-grade database proxy solution that provides:
+**ArticDBM (Arctic Database Manager)** is a comprehensive enterprise-grade database management platform that provides:
 
 - **Multi-database support**: PostgreSQL, MySQL, SQLite (with MariaDB Galera cluster support)
 - **Advanced Security**: SQL injection detection, threat intelligence integration, authentication, authorization
@@ -14,7 +14,7 @@
 - **MSP Ready**: Multi-tenant support, usage-based billing, white-label capabilities
 
 **Template Features:**
-- Multi-language support (Go 1.23.x proxy, Python 3.12+ manager)
+- Multi-language support (Python 3.12+ backend, React frontend)
 - Enterprise security and licensing integration
 - Comprehensive CI/CD pipeline
 - Production-ready containerization
@@ -26,16 +26,8 @@
 
 ### Languages & Frameworks
 
-**Go Stack (Proxy - High-Performance)**:
-- **Go**: 1.23.x (latest patch version)
-- **Database Drivers**: lib/pq (PostgreSQL), go-sql-driver/mysql, mattn/go-sqlite3
-- **Config**: spf13/viper
-- **Logging**: go.uber.org/zap
-- **Metrics**: prometheus/client_golang
-- **Use Case**: Database protocol handling, query routing, security checks, connection pooling
-
-**Python Stack (Manager)**:
-- **Python**: 3.12+ for manager application
+**Python Stack (Backend)**:
+- **Python**: 3.12+ for backend application
 - **Web Framework**: Flask + Flask-Security-Too (mandatory)
 - **Database**:
   - **SQLAlchemy**: Database initialization (schema creation)
@@ -43,6 +35,14 @@
 - **Cache**: Redis (aioredis)
 - **Auth**: Flask-Security-Too with multi-factor support
 - **Use Case**: REST API endpoints, user management, configuration, audit logging
+
+**React Stack (WebUI)**:
+- **React**: Latest LTS version with TypeScript
+- **State Management**: Redux or Context API
+- **UI Framework**: Material-UI or similar component library
+- **HTTP Client**: axios or fetch API
+- **Build Tool**: Vite or Create React App
+- **Use Case**: Dashboard, configuration interface, user management, real-time monitoring
 
 ### Infrastructure & DevOps
 - **Containers**: Docker with multi-stage builds, Docker Compose
@@ -58,7 +58,6 @@
 - **Database Strategy (Hybrid Approach)**:
   - **SQLAlchemy**: Used for database **initialization only** (schema creation)
   - **PyDAL**: Used for **migrations and day-to-day operations** (mandatory)
-  - **Go**: GORM or sqlx (mandatory for cross-database support)
 - **MariaDB Galera Support**: Handle Galera-specific requirements (WSREP, auto-increment, transactions)
 
 **Supported DB_TYPE Values**:
@@ -133,25 +132,74 @@ For projects requiring AI capabilities, integrate with WaddleAI located at `~/co
 
 📚 **WaddleAI Documentation**: See WaddleAI project at `~/code/WaddleAI` for integration details
 
+## MarchProxy Integration
+
+ArticDBM integrates with MarchProxy for advanced database proxy capabilities when deployed in high-performance environments.
+
+**When to Use MarchProxy with ArticDBM:**
+- High-throughput database access requirements (>10k queries/sec)
+- Ultra-low latency networking constraints
+- Advanced connection pooling and multiplexing
+- Protocol-level query optimization
+- Real-time query performance monitoring
+
+**Integration Pattern (ArticDBM):**
+- MarchProxy runs as transparent proxy layer between clients and Manager
+- Manager delegates protocol handling to MarchProxy
+- MarchProxy provides statistics collection for dashboard display
+- License-gate MarchProxy features as enterprise functionality
+- Performance optimizations visible in WebUI monitoring
+
+**Connection Flow**:
+- Client → MarchProxy (proxy layer)
+- MarchProxy → Manager (REST API for config)
+- Manager → Backend Database (via PyDAL)
+
+📚 **MarchProxy Documentation**: Refer to MarchProxy project documentation for advanced configuration
+
+## Elder Integration
+
+ArticDBM integrates with Elder for distributed logging and observability across multi-node deployments.
+
+**When to Use Elder with ArticDBM:**
+- Multi-datacenter deployments requiring centralized logging
+- Complex audit trail requirements for compliance
+- Distributed tracing across Manager and WebUI services
+- Long-term log retention and analysis
+- Real-time log aggregation and searching
+
+**Integration Pattern (ArticDBM):**
+- Manager service sends logs to Elder aggregator
+- WebUI logs captured via browser-based logging client
+- Elder provides centralized log querying API
+- Manager dashboard integrates Elder log search UI
+- License-gate advanced logging features
+
+**Log Collection**:
+- Manager → Elder: Application and audit logs
+- WebUI → Elder: Client-side events and performance metrics
+- Audit Trail: Structured logging of all security-relevant events
+
+📚 **Elder Documentation**: Refer to Elder project documentation for deployment and configuration
+
 ## Project Structure
 
 ```
 ArticDBM/
-├── proxy/                    # Go-based database proxy
-│   ├── main.go              # Main proxy application
-│   ├── internal/            # Internal packages
-│   │   ├── config/          # Configuration management
-│   │   ├── handlers/        # Database protocol handlers
-│   │   ├── security/        # SQL injection detection
-│   │   ├── auth/            # Authentication/authorization
-│   │   ├── metrics/         # Prometheus metrics
-│   │   └── pool/            # Connection pooling
-│   ├── Dockerfile           # Proxy container
-│   └── go.mod              # Go dependencies
-├── manager/                 # Python Flask manager
+├── manager/                 # Python Flask backend
 │   ├── app.py              # Main manager application
 │   ├── requirements.txt    # Python dependencies
 │   └── Dockerfile          # Manager container
+├── webui/                   # React frontend application
+│   ├── public/             # Static assets
+│   ├── src/                # React source code
+│   │   ├── components/     # React components
+│   │   ├── pages/          # Page components
+│   │   ├── services/       # API clients
+│   │   ├── App.tsx         # Main app component
+│   │   └── index.tsx       # Entry point
+│   ├── package.json        # Dependencies
+│   └── Dockerfile          # WebUI container
 ├── docs/                   # Documentation
 │   ├── index.md           # Documentation homepage (lowercase exception)
 │   ├── USAGE.md           # Usage guide
@@ -176,8 +224,8 @@ ArticDBM uses a microservices architecture with separated concerns:
 
 | Service | Technology | Purpose | Port |
 |---------|-----------|---------|------|
-| **proxy** | Go 1.23.x | Database protocol handling, query routing, security checks | 3306, 5432 |
 | **manager** | Python 3.12+ Flask | REST API, user management, configuration, audit logging | 8000 |
+| **webui** | React + TypeScript | Dashboard, configuration interface, monitoring, real-time updates | 3000 |
 | **Supporting** | PostgreSQL/Redis | Data persistence, caching, configuration distribution | 5432, 6379 |
 
 ### Deployment Topology
@@ -188,9 +236,9 @@ ArticDBM uses a microservices architecture with separated concerns:
 └─┬───────────────────┬─────────────┬─┘
   │                   │             │
   ▼                   ▼             ▼
-┌─────────────┐ ┌──────────┐ ┌──────────┐
-│  Manager (x2)│ │  Proxy (x2) │
-└─────────────┘ └──────────┘
+┌─────────────┐ ┌──────────────┐ ┌────────────┐
+│  Manager (x2)│ │  WebUI (x2) │
+└─────────────┘ └──────────────┘
        │              │
        └──────┬───────┘
               ▼
@@ -209,13 +257,13 @@ All services are Kubernetes-ready with Helm charts and raw manifests in `k8s/`:
 
 ### Helm Charts (`k8s/helm/`)
 ```bash
-# Deploy proxy to development namespace
-helm install proxy k8s/helm/proxy \
+# Deploy manager to development namespace
+helm install manager k8s/helm/manager \
   --namespace dev \
-  --values k8s/helm/proxy/values-dev.yaml
+  --values k8s/helm/manager/values-dev.yaml
 
-# Deploy manager
-helm install manager k8s/helm/manager --namespace dev
+# Deploy webui
+helm install webui k8s/helm/webui --namespace dev
 ```
 
 ### Raw Manifests (`k8s/manifests/`)
@@ -225,8 +273,8 @@ kubectl apply -f k8s/manifests/namespace.yaml
 kubectl apply -f k8s/manifests/rbac.yaml
 
 # Deploy services
-kubectl apply -f k8s/manifests/proxy/
 kubectl apply -f k8s/manifests/manager/
+kubectl apply -f k8s/manifests/webui/
 ```
 
 📚 **Kubernetes Documentation**: [k8s/README.md](k8s/README.md)
@@ -287,9 +335,9 @@ make license-check-features  # Check available features
 **NEVER take shortcuts or the "easy route" - ALWAYS prioritize safety, stability, and feature completeness**
 
 #### Core Principles (ArticDBM)
-- **Database Proxy Integrity**: Query validation, threat intelligence integration, zero data loss
+- **Manager Integrity**: Query validation, threat intelligence integration, zero data loss
 - **Multi-Database Support**: PostgreSQL, MySQL, SQLite, MariaDB Galera must work identically
-- **Security Enforcement**: SQL injection detection, auth/authz, audit logging are mandatory
+- **Security Enforcement**: Auth/authz, audit logging, Flask-Security-Too are mandatory
 - **No Quick Fixes**: Resist quick workarounds or partial solutions
 - **Complete Features**: Fully implemented with proper error handling and validation
 - **Safety First**: Security, data integrity, and fault tolerance are non-negotiable
@@ -310,14 +358,14 @@ make license-check-features  # Check available features
 - ❌ Leaving debug code or backdoors in production
 - ❌ Skipping threat intelligence validation for performance
 - ❌ Allowing mixed database behavior across DB_TYPE values
-- ❌ Disabling SQL injection detection in "trusted" environments
+- ❌ Bypassing Flask-Security-Too authentication requirements
 - ❌ Hardcoding database connection strings
 
 #### Quality Checklist Before Completion
 - ✅ All error cases handled properly
 - ✅ Unit tests cover all code paths
 - ✅ Integration tests verify component interactions
-- ✅ Smoke tests verify build, run, API health, and proxy stability
+- ✅ Smoke tests verify build, run, API health, and manager stability
 - ✅ Security requirements fully implemented
 - ✅ Performance meets acceptable standards
 - ✅ Documentation complete and accurate
@@ -330,6 +378,7 @@ make license-check-features  # Check available features
 - ✅ All DB_TYPE values tested (postgres, mysql, sqlite, galera)
 - ✅ Threat intelligence integration tested
 - ✅ Multi-database behavioral consistency verified
+- ✅ WebUI integration tests passing
 
 ### Git Workflow
 - **NEVER commit automatically** unless explicitly requested by the user
@@ -341,8 +390,8 @@ make license-check-features  # Check available features
 
 **Before Every Commit - Security Scanning**:
 - **Run security audits on all modified packages**:
-  - **Go packages**: Run `gosec ./...` on modified Go services
-  - **Python packages**: Run `bandit -r .` and `safety check` on modified Python services
+  - **Python packages**: Run `bandit -r .` and `safety check` on modified services
+  - **Node packages**: Run `npm audit` on WebUI modifications
 - **Do NOT commit if security vulnerabilities are found** - fix all issues first
 - **Document vulnerability fixes** in commit message if applicable
 
@@ -354,7 +403,7 @@ make license-check-features  # Check available features
 
 **Before Every Commit - Screenshots** (if applicable):
 - **Run screenshot tool to update UI screenshots in documentation**
-  - Run `cd manager && npm run screenshots` to capture current UI state
+  - Run `cd webui && npm run screenshots` to capture current UI state
   - Commit updated screenshots with relevant feature/documentation changes
 
 ### Local State Management (Crash Recovery)
@@ -376,19 +425,21 @@ make license-check-features  # Check available features
 ### Linting & Code Quality Requirements
 - **ALL code must pass linting** before commit - no exceptions
 - **Python**: flake8, black, isort, pytest, pytest-cov, mypy (type checking), bandit (security)
-- **Go**: golangci-lint (includes staticcheck, gosec, etc.)
+- **JavaScript/TypeScript**: eslint, prettier, jest, ts-jest (for React WebUI)
 - **Docker**: hadolint, trivy
 - **YAML**: yamllint
 - **Markdown**: markdownlint
 - **Shell**: shellcheck
 - **CodeQL**: All code must pass CodeQL security analysis
 - **PEP Compliance**: Python code must follow PEP 8, PEP 257 (docstrings), PEP 484 (type hints)
+- **React Standards**: React best practices, hooks rules, accessibility (a11y) compliance
 
 ### Build & Deployment Requirements
 - **NEVER mark tasks as completed until successful build verification**
-- All Go and Python builds MUST be executed within Docker containers
+- All Python and Node.js builds MUST be executed within Docker containers
 - Use containerized builds for local development and CI/CD pipelines
 - Build failures must be resolved before task completion
+- React WebUI must build without warnings in production mode
 
 ### Documentation Standards
 - **Markdown file locations** (STRICT):
@@ -423,10 +474,10 @@ Comprehensive development standards are documented separately to keep this file 
 
 **ALWAYS use microservices architecture** - decompose into specialized, independently deployable containers:
 
-1. **Proxy Service**: Go application for database protocol handling and query routing
-2. **Manager Service**: Flask + Flask-Security-Too backend for REST API and management
+1. **Manager Service**: Flask + Flask-Security-Too backend for REST API and management
+2. **WebUI Service**: React frontend for dashboard and user interface
 
-**Default Container Separation**: Proxy and Manager are ALWAYS separate containers. This provides:
+**Default Container Separation**: Manager and WebUI are ALWAYS separate containers. This provides:
 - Independent scaling of services
 - Different resource allocation per service
 - Separate deployment lifecycles
@@ -443,48 +494,47 @@ Comprehensive development standards are documented separately to keep this file 
 
 ## Common Integration Patterns
 
-### Go Proxy + Python Manager Architecture
+### Python Manager + React WebUI Architecture
 
-ArticDBM uses a specialized hybrid architecture optimized for database proxy operations:
+ArticDBM uses a specialized hybrid architecture optimized for database management platform operations:
 
-**Go Proxy (High-Performance Layer)**:
-- Protocol handling: MySQL wire protocol, PostgreSQL wire protocol
-- Connection pooling and lifecycle management
-- Real-time SQL injection detection and threat blocking
-- Query routing and load balancing to backend databases
-- Metrics collection and health monitoring
-- Zero-copy packet processing with XDP support (optional)
-
-**Python Manager (Management & Configuration Layer)**:
-- REST API for configuration management
+**Python Manager (Backend & API Layer)**:
+- REST API for configuration management and data access
 - User and API key management with Flask-Security-Too
 - Threat intelligence feed integration (STIX/TAXII, OpenIOC, MISP)
 - Audit logging and usage tracking
 - License validation and feature gating
-- Dashboard and analytics
+- Database schema management via PyDAL
+
+**React WebUI (Frontend & Dashboard Layer)**:
+- Interactive dashboard and real-time monitoring
+- User management interface
+- Configuration management UI
+- Query execution and result visualization
+- Threat intelligence policy management
+- Usage analytics and reporting
 
 **Communication Pattern**:
-- Manager → Proxy: Configuration updates via gRPC or HTTP/3 (QUIC)
-- Proxy → Manager: Metrics and events via Prometheus scrape or push
-- Both → Database: Standard database protocol (MySQL/PostgreSQL wire protocol)
-- Both → Redis: Configuration distribution and caching
+- WebUI → Manager: REST API calls via axios/fetch
+- WebUI ↔ Manager: Real-time updates via WebSocket connections
+- Manager → Database: Standard database access via PyDAL and SQLAlchemy
+- Manager → Redis: Configuration distribution and caching
 
 **Database Type Handling**:
-- Go Proxy: Handles multiple DB_TYPE connections transparently
-  - PostgreSQL (lib/pq) - Default wire protocol
-  - MySQL/MariaDB (go-sql-driver/mysql) - MySQL wire protocol
-  - SQLite (mattn/go-sqlite3) - Embedded support
+- Python Manager: Manages multiple DB_TYPE connections transparently
+  - PostgreSQL - Primary supported database
+  - MySQL/MariaDB - Full support with Galera awareness
+  - SQLite - Development and testing support
   - Galera - MySQL protocol with WSREP awareness
-- Python Manager: Manages schemas and migrations via PyDAL
-  - Database initialization: SQLAlchemy only
-  - Day-to-day operations: PyDAL exclusively
-  - DB_TYPE environment variable drives connection strings
+- Database initialization: SQLAlchemy only
+- Day-to-day operations: PyDAL exclusively
+- DB_TYPE environment variable drives connection strings
 
 **Key Patterns**:
-1. **Multi-Database Abstraction**: Proxy handles protocol translation, Manager handles schema consistency
-2. **Threat Intelligence Pipeline**: STIX feeds → Manager → Proxy cache → Real-time detection
-3. **Performance-Safety Balance**: Go handles speed, Python handles correctness
-4. **Configuration Distribution**: Redis-backed config prevents proxy restarts on updates
+1. **Client-Server Architecture**: WebUI handles presentation, Manager handles business logic
+2. **Threat Intelligence Pipeline**: STIX feeds → Manager → WebUI → Real-time alerts
+3. **Data Consistency**: Manager enforces consistency, WebUI displays real-time state
+4. **Configuration Distribution**: Redis-backed config for distributed deployments
 
 📚 **Complete Integration Examples**: [Development Standards](docs/STANDARDS.md)
 
@@ -493,37 +543,32 @@ ArticDBM uses a specialized hybrid architecture optimized for database proxy ope
 ArticDBM follows the Penguin Tech Inc project template with important restrictions:
 
 **DO NOT modify**:
-- Language requirements (Go 1.23.x for proxy, Python 3.12+ for manager)
+- Language requirements (Python 3.12+ for manager, React for WebUI)
 - DB_TYPE support (must support all 4 database types identically)
-- Microservices separation (proxy and manager always separate containers)
-- Security requirements (SQL injection detection, threat intelligence, auth/authz mandatory)
+- Microservices separation (manager and webui always separate containers)
+- Security requirements (threat intelligence, auth/authz, Flask-Security-Too mandatory)
 - License integration with PenguinTech License Server
 
 **CAN customize**:
 - Additional threat intelligence sources beyond STIX/TAXII/OpenIOC/MISP
-- Custom metric collection for specific use cases
-- Performance tuning parameters (connection pool sizing, warmup percentages)
+- Custom metric collection and visualization in WebUI
+- Performance tuning parameters and optimization settings
 - Logging verbosity and audit retention policies
-- Dashboard layouts in manager UI
+- Dashboard layouts and UI components in WebUI
+- React component library and styling framework choices
 
 **Database Type Restrictions**:
 - All DB_TYPE values (postgres, mysql, sqlite, galera) MUST be supported
 - Behavior must be identical across all database types
 - Connection strings MUST follow PyDAL conventions for Python manager
-- Proxy protocol handling MUST support all database wire protocols
+- Database access layer MUST support all database wire protocols
 - NO database-specific optimizations that break other databases
 
-**WARNING**: Removing database support or allowing divergent behavior breaks the core ArticDBM value proposition. Template customization is secondary to maintaining proxy integrity across all supported databases.
+**WARNING**: Removing database support or allowing divergent behavior breaks the core ArticDBM value proposition. Template customization is secondary to maintaining manager integrity across all supported databases.
 
 📚 **Customization Guidelines**: [Development Standards](docs/STANDARDS.md)
 
 ## ArticDBM-Specific Features
-
-### SQL Injection Detection
-- Pattern-based detection in `proxy/internal/security/checker.go`
-- 40+ attack patterns including SQL injection, shell commands, and default resource blocking
-- Real-time threat prevention with detailed analysis
-- Configurable security rules via manager
 
 ### Threat Intelligence Integration
 - **STIX/TAXII Feeds**: Industry-standard threat intelligence formats
@@ -551,17 +596,19 @@ ArticDBM follows the Penguin Tech Inc project template with important restrictio
 - **Hot Path Optimizations**: String optimization, buffer pool reuse, cache efficiency
 
 ### Monitoring & Metrics
-**Prometheus Metrics** (available at `:9090/metrics`):
-- `articdbm_active_connections` - Active connection count
-- `articdbm_total_queries` - Total queries processed
-- `articdbm_query_duration_seconds` - Query execution time
-- `articdbm_auth_failures_total` - Authentication failures
-- `articdbm_sql_injection_attempts_total` - Blocked injections
+**Application Metrics**:
+- Request counts and response times
+- Database operation metrics
+- User activity and session tracking
+- API endpoint performance
+- Real-time dashboard updates
 
 **Audit Logging**:
-- All queries logged to `audit_log` table
-- User activity tracking
-- IP address recording
+- All user actions logged to `audit_log` table
+- Database operation history
+- Administrative actions tracking
+- Security event logging
+- IP address and session recording
 
 ## Troubleshooting & Support
 
@@ -573,14 +620,14 @@ ArticDBM follows the Penguin Tech Inc project template with important restrictio
 ### Debug Commands
 ```bash
 # Container debugging
-docker-compose logs -f proxy
 docker-compose logs -f manager
-
-# Check proxy metrics
-curl http://localhost:9090/metrics
+docker-compose logs -f webui
 
 # Access manager API
 curl http://localhost:8000/api/health
+
+# Access WebUI
+open http://localhost:3000
 
 # License debugging
 make license-debug            # Test license server connectivity
@@ -615,9 +662,9 @@ All container images follow automatic naming based on branch and version changes
 
 Before committing, run in this order:
 
-- [ ] **Linters**: `golangci-lint run` or `flake8 .` or equivalent
-- [ ] **Security scans**: `gosec ./...`, `bandit -r .`, etc. (per language)
-- [ ] **Tests**: `go test ./...`, `pytest`, etc. (unit tests only)
+- [ ] **Linters**: `flake8 .`, `eslint .`, `prettier --check .` or equivalent
+- [ ] **Security scans**: `bandit -r .`, `npm audit`, `safety check` (per language)
+- [ ] **Tests**: `pytest`, `npm test` (unit tests only)
 - [ ] **Version updates**: Update `.version` if releasing new version
 - [ ] **Documentation**: Update docs if adding/changing workflows
 - [ ] **No secrets**: Verify no credentials, API keys, or tokens in code
@@ -625,6 +672,13 @@ Before committing, run in this order:
 
 **Only commit when asked** — follow the pre-commit checklist above, then wait for approval before `git commit`.
 
+## License & Legal
+
+**License File**: `LICENSE.md` (located at project root)
+
+**License Type**: Limited AGPL-3.0 with commercial use restrictions and Contributor Employer Exception
+
+The `LICENSE.md` file is located at the project root following industry standards. This project uses a modified AGPL-3.0 license with additional exceptions for commercial use and special provisions for companies employing contributors.
 ---
 
 **Project Version**: See `.version` file

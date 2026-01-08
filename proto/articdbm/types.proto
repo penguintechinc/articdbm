@@ -1,0 +1,220 @@
+syntax = "proto3";
+
+package articdbm;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/penguin-tech-inc/articdbm/proto/articdbm";
+
+// Common resource types
+enum ResourceType {
+  RESOURCE_TYPE_UNSPECIFIED = 0;
+  RESOURCE_TYPE_DATABASE = 1;
+  RESOURCE_TYPE_CACHE = 2;
+}
+
+// Database/cache engines
+enum Engine {
+  ENGINE_UNSPECIFIED = 0;
+  ENGINE_POSTGRESQL = 1;
+  ENGINE_MYSQL = 2;
+  ENGINE_MARIADB = 3;
+  ENGINE_REDIS = 4;
+  ENGINE_MEMCACHED = 5;
+  ENGINE_MONGODB = 6;
+  ENGINE_SQLSERVER = 7;
+}
+
+// Resource status
+enum ResourceStatus {
+  RESOURCE_STATUS_UNSPECIFIED = 0;
+  RESOURCE_STATUS_PROVISIONING = 1;
+  RESOURCE_STATUS_AVAILABLE = 2;
+  RESOURCE_STATUS_MODIFYING = 3;
+  RESOURCE_STATUS_DELETING = 4;
+  RESOURCE_STATUS_DELETED = 5;
+  RESOURCE_STATUS_FAILED = 6;
+}
+
+// Cloud provider types
+enum ProviderType {
+  PROVIDER_TYPE_UNSPECIFIED = 0;
+  PROVIDER_TYPE_KUBERNETES = 1;
+  PROVIDER_TYPE_AWS = 2;
+  PROVIDER_TYPE_GCP = 3;
+  PROVIDER_TYPE_AZURE = 4;
+  PROVIDER_TYPE_VULTR = 5;
+}
+
+// TLS modes
+enum TLSMode {
+  TLS_MODE_UNSPECIFIED = 0;
+  TLS_MODE_DISABLED = 1;
+  TLS_MODE_OPTIONAL = 2;
+  TLS_MODE_REQUIRED = 3;
+}
+
+// Credential types
+enum CredentialType {
+  CREDENTIAL_TYPE_UNSPECIFIED = 0;
+  CREDENTIAL_TYPE_PASSWORD = 1;
+  CREDENTIAL_TYPE_IAM_ROLE = 2;
+  CREDENTIAL_TYPE_JWT = 3;
+  CREDENTIAL_TYPE_MTLS = 4;
+}
+
+// Deployment models
+enum DeploymentModel {
+  DEPLOYMENT_MODEL_UNSPECIFIED = 0;
+  DEPLOYMENT_MODEL_SHARED = 1;
+  DEPLOYMENT_MODEL_SEPARATE = 2;
+}
+
+// License tiers
+enum LicenseTier {
+  LICENSE_TIER_UNSPECIFIED = 0;
+  LICENSE_TIER_FREE = 1;
+  LICENSE_TIER_PROFESSIONAL = 2;
+  LICENSE_TIER_ENTERPRISE = 3;
+}
+
+// Resource message
+message Resource {
+  int64 id = 1;
+  string name = 2;
+  ResourceType resource_type = 3;
+  Engine engine = 4;
+  int64 provider_id = 5;
+  int64 application_id = 6;
+
+  // Connection details
+  string endpoint = 7;
+  int32 port = 8;
+  string database_name = 9;
+
+  // Configuration
+  string instance_class = 10;
+  int32 storage_size_gb = 11;
+  bool multi_az = 12;
+  int32 replicas = 13;
+  TLSMode tls_mode = 14;
+
+  // Status
+  ResourceStatus status = 15;
+  string status_message = 16;
+
+  // Tags
+  map<string, string> tags = 17;
+
+  // Elder integration
+  string elder_entity_id = 18;
+
+  // Timestamps
+  google.protobuf.Timestamp created_at = 19;
+  google.protobuf.Timestamp updated_at = 20;
+}
+
+// Application message
+message Application {
+  int64 id = 1;
+  string name = 2;
+  string description = 3;
+  DeploymentModel deployment_model = 4;
+
+  // Elder integration
+  string elder_entity_id = 5;
+  string elder_service_id = 6;
+
+  // Tags
+  map<string, string> tags = 7;
+
+  // Timestamps
+  google.protobuf.Timestamp created_at = 8;
+  google.protobuf.Timestamp updated_at = 9;
+}
+
+// Credential message
+message Credential {
+  int64 id = 1;
+  int64 resource_id = 2;
+  int64 application_id = 3;
+  CredentialType credential_type = 4;
+
+  // Password auth
+  string username = 5;
+  // password_encrypted not included in gRPC (security)
+
+  // IAM auth
+  string iam_role_arn = 6;
+  string iam_policy = 7;
+
+  // JWT auth
+  string jwt_subject = 8;
+  map<string, string> jwt_claims = 9;
+
+  // mTLS auth (certificate data not included in gRPC)
+
+  // Permissions
+  repeated string permissions = 10;
+
+  // Expiration
+  google.protobuf.Timestamp expires_at = 11;
+
+  // Auto-rotation
+  bool auto_rotate = 12;
+  int32 rotation_interval_days = 13;
+  google.protobuf.Timestamp last_rotated_at = 14;
+  google.protobuf.Timestamp next_rotation_at = 15;
+
+  // Timestamps
+  google.protobuf.Timestamp created_at = 16;
+  google.protobuf.Timestamp updated_at = 17;
+}
+
+// Provider message
+message Provider {
+  int64 id = 1;
+  string name = 2;
+  ProviderType provider_type = 3;
+
+  // Configuration (JSON as string)
+  string configuration = 4;
+  string credentials_secret_name = 5;
+
+  // Status
+  bool enabled = 6;
+  google.protobuf.Timestamp last_test_at = 7;
+  bool last_test_success = 8;
+  string last_test_message = 9;
+
+  // Timestamps
+  google.protobuf.Timestamp created_at = 10;
+  google.protobuf.Timestamp updated_at = 11;
+}
+
+// Pagination message
+message Pagination {
+  int32 page = 1;
+  int32 page_size = 2;
+  int32 total = 3;
+  int32 total_pages = 4;
+}
+
+// Event types for streaming
+enum EventType {
+  EVENT_TYPE_UNSPECIFIED = 0;
+  EVENT_TYPE_RESOURCE_CREATED = 1;
+  EVENT_TYPE_RESOURCE_UPDATED = 2;
+  EVENT_TYPE_RESOURCE_DELETED = 3;
+  EVENT_TYPE_CREDENTIAL_ROTATED = 4;
+  EVENT_TYPE_HEALTH_CHECK = 5;
+}
+
+// Event message for streaming
+message Event {
+  EventType event_type = 1;
+  int64 resource_id = 2;
+  string message = 3;
+  google.protobuf.Timestamp timestamp = 4;
+  map<string, string> metadata = 5;
+}

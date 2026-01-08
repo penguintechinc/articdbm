@@ -1,0 +1,428 @@
+syntax = "proto3";
+
+package articdbm;
+
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/empty.proto";
+import "articdbm/types.proto";
+
+option go_package = "github.com/penguin-tech-inc/articdbm/proto/articdbm";
+
+// Manager service for WebUI communication
+service ManagerService {
+  // Dashboard
+  rpc GetDashboardStats(GetDashboardStatsRequest) returns (GetDashboardStatsResponse);
+  rpc StreamEvents(StreamEventsRequest) returns (stream Event);
+
+  // Resources
+  rpc ListResources(ListResourcesRequest) returns (ListResourcesResponse);
+  rpc GetResource(GetResourceRequest) returns (GetResourceResponse);
+  rpc CreateResource(CreateResourceRequest) returns (CreateResourceResponse);
+  rpc UpdateResource(UpdateResourceRequest) returns (UpdateResourceResponse);
+  rpc DeleteResource(DeleteResourceRequest) returns (DeleteResourceResponse);
+  rpc ScaleResource(ScaleResourceRequest) returns (ScaleResourceResponse);
+  rpc GetResourceMetrics(GetResourceMetricsRequest) returns (GetResourceMetricsResponse);
+
+  // Applications
+  rpc ListApplications(ListApplicationsRequest) returns (ListApplicationsResponse);
+  rpc GetApplication(GetApplicationRequest) returns (GetApplicationResponse);
+  rpc CreateApplication(CreateApplicationRequest) returns (CreateApplicationResponse);
+  rpc UpdateApplication(UpdateApplicationRequest) returns (UpdateApplicationResponse);
+  rpc DeleteApplication(DeleteApplicationRequest) returns (DeleteApplicationResponse);
+  rpc SyncWithElder(SyncWithElderRequest) returns (SyncWithElderResponse);
+
+  // Credentials
+  rpc ListCredentials(ListCredentialsRequest) returns (ListCredentialsResponse);
+  rpc GetCredential(GetCredentialRequest) returns (GetCredentialResponse);
+  rpc CreateCredential(CreateCredentialRequest) returns (CreateCredentialResponse);
+  rpc RotateCredential(RotateCredentialRequest) returns (RotateCredentialResponse);
+  rpc ConfigureAutoRotation(ConfigureAutoRotationRequest) returns (ConfigureAutoRotationResponse);
+  rpc DeleteCredential(DeleteCredentialRequest) returns (DeleteCredentialResponse);
+
+  // Providers
+  rpc ListProviders(ListProvidersRequest) returns (ListProvidersResponse);
+  rpc GetProvider(GetProviderRequest) returns (GetProviderResponse);
+  rpc CreateProvider(CreateProviderRequest) returns (CreateProviderResponse);
+  rpc UpdateProvider(UpdateProviderRequest) returns (UpdateProviderResponse);
+  rpc DeleteProvider(DeleteProviderRequest) returns (DeleteProviderResponse);
+  rpc TestProvider(TestProviderRequest) returns (TestProviderResponse);
+
+  // MarchProxy
+  rpc ConfigureMarchProxy(ConfigureMarchProxyRequest) returns (ConfigureMarchProxyResponse);
+  rpc RemoveMarchProxy(RemoveMarchProxyRequest) returns (RemoveMarchProxyResponse);
+  rpc SyncMarchProxy(SyncMarchProxyRequest) returns (SyncMarchProxyResponse);
+
+  // Tags
+  rpc AddTags(AddTagsRequest) returns (AddTagsResponse);
+  rpc RemoveTag(RemoveTagRequest) returns (RemoveTagResponse);
+  rpc SyncTags(SyncTagsRequest) returns (SyncTagsResponse);
+}
+
+// Dashboard messages
+message GetDashboardStatsRequest {}
+
+message GetDashboardStatsResponse {
+  int32 total_resources = 1;
+  int32 active_resources = 2;
+  int32 total_applications = 3;
+  int32 total_credentials = 4;
+  LicenseTier license_tier = 5;
+  int32 resource_limit = 6;
+  map<string, int32> resources_by_type = 7;
+  map<string, int32> resources_by_status = 8;
+}
+
+message StreamEventsRequest {
+  repeated EventType event_types = 1;
+}
+
+// Resource messages
+message ListResourcesRequest {
+  int32 page = 1;
+  int32 page_size = 2;
+  ResourceType resource_type = 3;
+  ResourceStatus status = 4;
+  int64 application_id = 5;
+}
+
+message ListResourcesResponse {
+  repeated Resource resources = 1;
+  Pagination pagination = 2;
+}
+
+message GetResourceRequest {
+  int64 id = 1;
+}
+
+message GetResourceResponse {
+  Resource resource = 1;
+}
+
+message CreateResourceRequest {
+  string name = 1;
+  ResourceType resource_type = 2;
+  Engine engine = 3;
+  int64 provider_id = 4;
+  int64 application_id = 5;
+  string database_name = 6;
+  string instance_class = 7;
+  int32 storage_size_gb = 8;
+  bool multi_az = 9;
+  int32 replicas = 10;
+  TLSMode tls_mode = 11;
+  map<string, string> tags = 12;
+}
+
+message CreateResourceResponse {
+  Resource resource = 1;
+}
+
+message UpdateResourceRequest {
+  int64 id = 1;
+  string name = 2;
+  string instance_class = 3;
+  int32 storage_size_gb = 4;
+  bool multi_az = 5;
+  int32 replicas = 6;
+  TLSMode tls_mode = 7;
+  map<string, string> tags = 8;
+}
+
+message UpdateResourceResponse {
+  Resource resource = 1;
+}
+
+message DeleteResourceRequest {
+  int64 id = 1;
+}
+
+message DeleteResourceResponse {
+  bool success = 1;
+}
+
+message ScaleResourceRequest {
+  int64 id = 1;
+  string instance_class = 2;
+  int32 replicas = 3;
+}
+
+message ScaleResourceResponse {
+  Resource resource = 1;
+}
+
+message GetResourceMetricsRequest {
+  int64 id = 1;
+  google.protobuf.Timestamp start_time = 2;
+  google.protobuf.Timestamp end_time = 3;
+}
+
+message Metric {
+  google.protobuf.Timestamp timestamp = 1;
+  double value = 2;
+}
+
+message GetResourceMetricsResponse {
+  repeated Metric cpu_utilization = 1;
+  repeated Metric memory_utilization = 2;
+  repeated Metric connections = 3;
+  repeated Metric storage_used = 4;
+}
+
+// Application messages
+message ListApplicationsRequest {
+  int32 page = 1;
+  int32 page_size = 2;
+}
+
+message ListApplicationsResponse {
+  repeated Application applications = 1;
+  Pagination pagination = 2;
+}
+
+message GetApplicationRequest {
+  int64 id = 1;
+}
+
+message GetApplicationResponse {
+  Application application = 1;
+}
+
+message CreateApplicationRequest {
+  string name = 1;
+  string description = 2;
+  DeploymentModel deployment_model = 3;
+  map<string, string> tags = 4;
+}
+
+message CreateApplicationResponse {
+  Application application = 1;
+}
+
+message UpdateApplicationRequest {
+  int64 id = 1;
+  string name = 2;
+  string description = 3;
+  DeploymentModel deployment_model = 4;
+  map<string, string> tags = 5;
+}
+
+message UpdateApplicationResponse {
+  Application application = 1;
+}
+
+message DeleteApplicationRequest {
+  int64 id = 1;
+}
+
+message DeleteApplicationResponse {
+  bool success = 1;
+}
+
+message SyncWithElderRequest {
+  int64 application_id = 1;
+}
+
+message SyncWithElderResponse {
+  bool success = 1;
+  string elder_entity_id = 2;
+  string elder_service_id = 3;
+  string message = 4;
+}
+
+// Credential messages
+message ListCredentialsRequest {
+  int32 page = 1;
+  int32 page_size = 2;
+  int64 resource_id = 3;
+  int64 application_id = 4;
+}
+
+message ListCredentialsResponse {
+  repeated Credential credentials = 1;
+  Pagination pagination = 2;
+}
+
+message GetCredentialRequest {
+  int64 id = 1;
+}
+
+message GetCredentialResponse {
+  Credential credential = 1;
+}
+
+message CreateCredentialRequest {
+  int64 resource_id = 1;
+  int64 application_id = 2;
+  CredentialType credential_type = 3;
+  string username = 4;
+  repeated string permissions = 5;
+  google.protobuf.Timestamp expires_at = 6;
+  bool auto_rotate = 7;
+  int32 rotation_interval_days = 8;
+
+  // IAM-specific
+  string iam_policy = 9;
+
+  // JWT-specific
+  string jwt_subject = 10;
+  map<string, string> jwt_claims = 11;
+}
+
+message CreateCredentialResponse {
+  Credential credential = 1;
+  string password = 2; // Only returned on creation
+  string jwt_token = 3; // Only for JWT credentials
+  string mtls_certificate = 4; // Only for mTLS credentials
+  string mtls_private_key = 5; // Only for mTLS credentials
+}
+
+message RotateCredentialRequest {
+  int64 id = 1;
+}
+
+message RotateCredentialResponse {
+  Credential credential = 1;
+  string new_password = 2; // Only for password credentials
+  string new_jwt_token = 3; // Only for JWT credentials
+  string new_mtls_certificate = 4; // Only for mTLS credentials
+  string new_mtls_private_key = 5; // Only for mTLS credentials
+}
+
+message ConfigureAutoRotationRequest {
+  int64 id = 1;
+  bool auto_rotate = 2;
+  int32 rotation_interval_days = 3;
+}
+
+message ConfigureAutoRotationResponse {
+  Credential credential = 1;
+}
+
+message DeleteCredentialRequest {
+  int64 id = 1;
+}
+
+message DeleteCredentialResponse {
+  bool success = 1;
+}
+
+// Provider messages
+message ListProvidersRequest {
+  int32 page = 1;
+  int32 page_size = 2;
+  ProviderType provider_type = 3;
+}
+
+message ListProvidersResponse {
+  repeated Provider providers = 1;
+  Pagination pagination = 2;
+}
+
+message GetProviderRequest {
+  int64 id = 1;
+}
+
+message GetProviderResponse {
+  Provider provider = 1;
+}
+
+message CreateProviderRequest {
+  string name = 1;
+  ProviderType provider_type = 2;
+  string configuration = 3;
+  string credentials_secret_name = 4;
+}
+
+message CreateProviderResponse {
+  Provider provider = 1;
+}
+
+message UpdateProviderRequest {
+  int64 id = 1;
+  string name = 2;
+  string configuration = 3;
+  string credentials_secret_name = 4;
+  bool enabled = 5;
+}
+
+message UpdateProviderResponse {
+  Provider provider = 1;
+}
+
+message DeleteProviderRequest {
+  int64 id = 1;
+}
+
+message DeleteProviderResponse {
+  bool success = 1;
+}
+
+message TestProviderRequest {
+  int64 id = 1;
+}
+
+message TestProviderResponse {
+  bool success = 1;
+  string message = 2;
+}
+
+// MarchProxy messages
+message ConfigureMarchProxyRequest {
+  int64 resource_id = 1;
+  int32 max_connections = 2;
+  int32 query_rate_limit = 3;
+  bool enable_sql_injection_detection = 4;
+}
+
+message ConfigureMarchProxyResponse {
+  bool success = 1;
+  string proxy_endpoint = 2;
+  int32 proxy_port = 3;
+  string message = 4;
+}
+
+message RemoveMarchProxyRequest {
+  int64 resource_id = 1;
+}
+
+message RemoveMarchProxyResponse {
+  bool success = 1;
+}
+
+message SyncMarchProxyRequest {
+  int64 resource_id = 1;
+}
+
+message SyncMarchProxyResponse {
+  bool success = 1;
+  string health_status = 2;
+  map<string, double> metrics = 3;
+}
+
+// Tag messages
+message AddTagsRequest {
+  int64 resource_id = 1;
+  map<string, string> tags = 2;
+}
+
+message AddTagsResponse {
+  Resource resource = 1;
+}
+
+message RemoveTagRequest {
+  int64 resource_id = 1;
+  string tag_key = 2;
+}
+
+message RemoveTagResponse {
+  Resource resource = 1;
+}
+
+message SyncTagsRequest {
+  int64 resource_id = 1;
+}
+
+message SyncTagsResponse {
+  bool success = 1;
+  string message = 2;
+}

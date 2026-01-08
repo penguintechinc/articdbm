@@ -1,0 +1,1 @@
+"""ArticDBM REST API module."""
