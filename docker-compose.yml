@@ -83,7 +83,7 @@ services:
       REACT_APP_GRPC_URL: ${GRPC_URL:-http://localhost:50051}
       NODE_ENV: ${NODE_ENV:-production}
     ports:
-      - "3000:3000"
+      - "3010:3000"
     depends_on:
       manager:
         condition: service_healthy
