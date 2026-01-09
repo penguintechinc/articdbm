@@ -17,13 +17,6 @@ from app.schemas.provider import (
 )
 from app.services.provisioning import get_provisioner, ProvisionerException
 from app.extensions import pydal_manager
-from app.utils.api_responses import (
-    success_response,
-    error_response,
-    created_response,
-    not_found_response,
-    forbidden_response,
-)
 
 logger = logging.getLogger(__name__)
 
@@ -158,15 +151,11 @@ def list_providers():
             'has_previous': page > 1,
         }
 
-        return success_response(data=response_data, message='Providers retrieved')
+        return jsonify(response_data), 200
 
     except Exception as e:
         logger.error(f"Failed to list providers: {e}")
-        return error_response(
-            error='Failed to list providers',
-            details=str(e),
-            status_code=500,
-        )
+        return jsonify({'error': 'Failed to list providers'}), 500
 
 
 @providers_bp.route('', methods=['POST'])
@@ -193,11 +182,7 @@ def create_provider():
         try:
             provider_req = ProviderCreate(**data)
         except ValidationError as ve:
-            return error_response(
-                error='Validation failed',
-                details=ve.errors(),
-                status_code=400,
-            )
+            return jsonify({'error': 'Validation failed'}), 400
 
         db = pydal_manager.db
 
@@ -228,15 +213,11 @@ def create_provider():
         response_data = build_provider_response(provider_row)
 
         logger.info(f"Created provider {provider_id}: {provider_req.name}")
-        return created_response(data=response_data, message='Provider created')
+        return jsonify(response_data), 201
 
     except Exception as e:
         logger.error(f"Failed to create provider: {e}")
-        return error_response(
-            error='Failed to create provider',
-            details=str(e),
-            status_code=500,
-        )
+        return jsonify({'error': 'Failed to create provider'}), 500
 
 
 @providers_bp.route('/<int:provider_id>', methods=['GET'])
@@ -256,18 +237,14 @@ def get_provider(provider_id: int):
 
         provider_row = db(db.providers.id == provider_id).select().first()
         if not provider_row:
-            return not_found_response('Provider')
+            return jsonify({'error': 'Provider not found'}), 404
 
         response_data = build_provider_response(provider_row)
-        return success_response(data=response_data, message='Provider retrieved')
+        return jsonify(response_data), 200
 
     except Exception as e:
         logger.error(f"Failed to get provider {provider_id}: {e}")
-        return error_response(
-            error='Failed to get provider',
-            details=str(e),
-            status_code=500,
-        )
+        return jsonify({'error': 'Failed to get provider'}), 500
 
 
 @providers_bp.route('/<int:provider_id>', methods=['PUT'])
@@ -297,17 +274,13 @@ def update_provider(provider_id: int):
         try:
             provider_req = ProviderUpdate(**data)
         except ValidationError as ve:
-            return error_response(
-                error='Validation failed',
-                details=ve.errors(),
-                status_code=400,
-            )
+            return jsonify({'error': 'Validation failed'}), 400
 
         db = pydal_manager.db
 
         provider_row = db(db.providers.id == provider_id).select().first()
         if not provider_row:
-            return not_found_response('Provider')
+            return jsonify({'error': 'Provider not found'}), 404
 
         # If setting as default, unset any existing defaults
         if provider_req.is_default:
@@ -341,18 +314,11 @@ def update_provider(provider_id: int):
         response_data = build_provider_response(provider_row)
 
         logger.info(f"Updated provider {provider_id}")
-        return success_response(
-            data=response_data,
-            message='Provider updated',
-        )
+        return jsonify(response_data), 200
 
     except Exception as e:
         logger.error(f"Failed to update provider {provider_id}: {e}")
-        return error_response(
-            error='Failed to update provider',
-            details=str(e),
-            status_code=500,
-        )
+        return jsonify({'error': 'Failed to update provider'}), 500
 
 
 @providers_bp.route('/<int:provider_id>', methods=['DELETE'])
@@ -372,31 +338,23 @@ def delete_provider(provider_id: int):
 
         provider_row = db(db.providers.id == provider_id).select().first()
         if not provider_row:
-            return not_found_response('Provider')
+            return jsonify({'error': 'Provider not found'}), 404
 
         # Check if provider has associated resources
         resource_count = db(db.resources.provider_id == provider_id).count()
         if resource_count > 0:
-            return error_response(
-                error='Provider has associated resources',
-                details=f'Cannot delete provider with {resource_count} resources',
-                status_code=400,
-            )
+            return jsonify({'error': 'Provider has associated resources'}), 400
 
         # Delete provider
         db(db.providers.id == provider_id).delete()
         db.commit()
 
         logger.info(f"Deleted provider {provider_id}")
-        return success_response(message='Provider deleted')
+        return jsonify({'message': 'Provider deleted'}), 200
 
     except Exception as e:
         logger.error(f"Failed to delete provider {provider_id}: {e}")
-        return error_response(
-            error='Failed to delete provider',
-            details=str(e),
-            status_code=500,
-        )
+        return jsonify({'error': 'Failed to delete provider'}), 500
 
 
 @providers_bp.route('/<int:provider_id>/test', methods=['POST'])
@@ -420,7 +378,7 @@ def test_provider_connection(provider_id: int):
 
         provider_row = db(db.providers.id == provider_id).select().first()
         if not provider_row:
-            return not_found_response('Provider')
+            return jsonify({'error': 'Provider not found'}), 404
 
         # Parse configuration
         config = {}
@@ -438,11 +396,7 @@ def test_provider_connection(provider_id: int):
             provisioner = get_provisioner(provider_row.provider_type, config)
         except ProvisionerException as pe:
             logger.warning(f"Failed to instantiate provisioner: {pe}")
-            return error_response(
-                error='Failed to instantiate provisioner',
-                details=str(pe),
-                status_code=500,
-            )
+            return jsonify({'error': 'Failed to instantiate provisioner'}), 500
 
         # Test connection (async)
         try:
@@ -484,16 +438,8 @@ def test_provider_connection(provider_id: int):
         status_code = 200 if success else 400
 
         logger.info(f"Provider {provider_id} connection test: {success}")
-        return success_response(
-            data=response_data,
-            message=f'Connection test {"passed" if success else "failed"}',
-            status_code=status_code,
-        )
+        return jsonify(response_data), status_code
 
     except Exception as e:
         logger.error(f"Failed to test provider {provider_id}: {e}")
-        return error_response(
-            error='Failed to test provider connection',
-            details=str(e),
-            status_code=500,
-        )
+        return jsonify({'error': 'Failed to test provider connection'}), 500

@@ -16,12 +16,7 @@ from flask_jwt_extended import (
     get_jwt_identity,
 )
 
-from manager.app.utils.api_responses import (
-    success_response,
-    error_response,
-    created_response,
-)
-from manager.app.api.errors import ValidationError, ForbiddenError
+from app.api.errors import ValidationError, ForbiddenError
 
 # Create Blueprint
 auth_bp = Blueprint("auth", __name__, url_prefix="/auth")
@@ -67,28 +62,18 @@ def login() -> Tuple[Dict[str, Any], int]:
     data = request.get_json()
 
     if not data:
-        return error_response(
-            error="Request body required",
-            status_code=400,
-        )
+        return jsonify({'error': 'Request body required'}), 400
 
     username = data.get("username", "").strip()
     password = data.get("password", "")
 
     if not username or not password:
-        return error_response(
-            error="Username and password are required",
-            details={"fields": ["username", "password"]},
-            status_code=400,
-        )
+        return jsonify({'error': 'Username and password are required'}), 400
 
     # Get user from database
     db = current_app.extensions.get("db")
     if not db:
-        return error_response(
-            error="Database connection failed",
-            status_code=500,
-        )
+        return jsonify({'error': 'Database connection failed'}), 500
 
     try:
         # Query user by username or email
@@ -97,25 +82,16 @@ def login() -> Tuple[Dict[str, Any], int]:
         ).select().first()
 
         if not user:
-            return error_response(
-                error="Invalid username or password",
-                status_code=401,
-            )
+            return jsonify({'error': 'Invalid username or password'}), 401
 
         if not user.is_active:
-            return error_response(
-                error="Account is inactive",
-                status_code=401,
-            )
+            return jsonify({'error': 'Account is inactive'}), 401
 
         # Verify password
-        from manager.app.utils.security import verify_password
+        from app.utils.security import verify_password
 
         if not verify_password(password, user.password):
-            return error_response(
-                error="Invalid username or password",
-                status_code=401,
-            )
+            return jsonify({'error': 'Invalid username or password'}), 401
 
         # Update last login timestamp
         user.update_record(last_login=datetime.utcnow())
@@ -153,19 +129,11 @@ def login() -> Tuple[Dict[str, Any], int]:
             "user": user_data,
         }
 
-        return success_response(
-            data=response_data,
-            message="Login successful",
-            status_code=200,
-        )
+        return jsonify(response_data), 200
 
     except Exception as e:
         current_app.logger.error(f"Login error: {str(e)}")
-        return error_response(
-            error="Login failed",
-            details={"message": str(e)},
-            status_code=500,
-        )
+        return jsonify({'error': 'Login failed'}), 500
 
 
 @auth_bp.route("/logout", methods=["POST"])
@@ -204,18 +172,11 @@ def logout() -> Tuple[Dict[str, Any], int]:
             )
             db.commit()
 
-        return success_response(
-            message="Logout successful",
-            status_code=200,
-        )
+        return jsonify({'message': 'Logout successful'}), 200
 
     except Exception as e:
         current_app.logger.error(f"Logout error: {str(e)}")
-        return error_response(
-            error="Logout failed",
-            details={"message": str(e)},
-            status_code=500,
-        )
+        return jsonify({'error': 'Logout failed'}), 500
 
 
 @auth_bp.route("/refresh", methods=["POST"])
@@ -249,17 +210,11 @@ def refresh() -> Tuple[Dict[str, Any], int]:
         # Verify user still exists and is active
         db = current_app.extensions.get("db")
         if not db:
-            return error_response(
-                error="Database connection failed",
-                status_code=500,
-            )
+            return jsonify({'error': 'Database connection failed'}), 500
 
         user = db.auth_user[int(user_id)]
         if not user or not user.is_active:
-            return error_response(
-                error="User not found or inactive",
-                status_code=401,
-            )
+            return jsonify({'error': 'User not found or inactive'}), 401
 
         # Generate new access token
         access_token = create_access_token(
@@ -269,19 +224,11 @@ def refresh() -> Tuple[Dict[str, Any], int]:
             ),
         )
 
-        return success_response(
-            data={"access_token": access_token},
-            message="Token refreshed",
-            status_code=200,
-        )
+        return jsonify({"access_token": access_token}), 200
 
     except Exception as e:
         current_app.logger.error(f"Token refresh error: {str(e)}")
-        return error_response(
-            error="Token refresh failed",
-            details={"message": str(e)},
-            status_code=500,
-        )
+        return jsonify({'error': 'Token refresh failed'}), 500
 
 
 @auth_bp.route("/me", methods=["GET"])
@@ -324,18 +271,12 @@ def get_current_user() -> Tuple[Dict[str, Any], int]:
     try:
         db = current_app.extensions.get("db")
         if not db:
-            return error_response(
-                error="Database connection failed",
-                status_code=500,
-            )
+            return jsonify({'error': 'Database connection failed'}), 500
 
         # Fetch user with roles
         user = db.auth_user[current_user.id]
         if not user:
-            return error_response(
-                error="User not found",
-                status_code=404,
-            )
+            return jsonify({'error': 'User not found'}), 404
 
         # Fetch user roles
         user_roles = db(db.auth_user_role.user_id == user.id).select()
@@ -367,18 +308,11 @@ def get_current_user() -> Tuple[Dict[str, Any], int]:
             "roles": roles,
         }
 
-        return success_response(
-            data=user_data,
-            status_code=200,
-        )
+        return jsonify(user_data), 200
 
     except Exception as e:
         current_app.logger.error(f"Get user error: {str(e)}")
-        return error_response(
-            error="Failed to retrieve user information",
-            details={"message": str(e)},
-            status_code=500,
-        )
+        return jsonify({'error': 'Failed to retrieve user information'}), 500
 
 
 @auth_bp.route("/register", methods=["POST"])
@@ -424,23 +358,11 @@ def register() -> Tuple[Dict[str, Any], int]:
     if not allow_public:
         # Check if user is authenticated and is admin
         if not current_user or "admin" not in [r.name for r in current_user.roles]:
-            return error_response(
-                error="User registration is disabled",
-                details={
-                    "message": (
-                        "Contact administrator to enable public registration "
-                        "or request account creation"
-                    )
-                },
-                status_code=403,
-            )
+            return jsonify({'error': 'User registration is disabled'}), 403
 
     data = request.get_json()
     if not data:
-        return error_response(
-            error="Request body required",
-            status_code=400,
-        )
+        return jsonify({'error': 'Request body required'}), 400
 
     # Validate required fields
     username = data.get("username", "").strip()
@@ -461,11 +383,7 @@ def register() -> Tuple[Dict[str, Any], int]:
         errors["password"] = "Password required (minimum 8 characters)"
 
     if errors:
-        return error_response(
-            error="Validation failed",
-            details=errors,
-            status_code=400,
-        )
+        return jsonify({'error': 'Validation failed'}), 400
 
     try:
         db = current_app.extensions.get("db")
@@ -478,23 +396,15 @@ def register() -> Tuple[Dict[str, Any], int]:
         # Check if username exists
         existing_user = db(db.auth_user.username == username).select().first()
         if existing_user:
-            return error_response(
-                error="Username already exists",
-                details={"field": "username"},
-                status_code=400,
-            )
+            return jsonify({'error': 'Username already exists'}), 400
 
         # Check if email exists
         existing_email = db(db.auth_user.email == email).select().first()
         if existing_email:
-            return error_response(
-                error="Email already registered",
-                details={"field": "email"},
-                status_code=400,
-            )
+            return jsonify({'error': 'Email already registered'}), 400
 
         # Hash password
-        from manager.app.utils.security import hash_password
+        from app.utils.security import hash_password
 
         hashed_password = hash_password(password)
 
@@ -521,15 +431,8 @@ def register() -> Tuple[Dict[str, Any], int]:
             "is_active": True,
         }
 
-        return created_response(
-            data=user_data,
-            message="User registered successfully",
-        )
+        return jsonify(user_data), 201
 
     except Exception as e:
         current_app.logger.error(f"Registration error: {str(e)}")
-        return error_response(
-            error="Registration failed",
-            details={"message": str(e)},
-            status_code=500,
-        )
+        return jsonify({'error': 'Registration failed'}), 500

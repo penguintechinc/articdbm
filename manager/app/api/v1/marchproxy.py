@@ -17,20 +17,15 @@ from flask import Blueprint, request, current_app
 from flask_security import login_required, current_user
 from pydantic import ValidationError as PydanticValidationError
 
-from manager.app.schemas.provider import (
+from app.schemas.provider import (
     MarchProxyConfigRequest,
     MarchProxyStatusResponse,
 )
-from manager.app.integrations.marchproxy_client import MarchProxyClient
-from manager.app.api.errors import (
+from app.integrations.marchproxy_client import MarchProxyClient
+from app.api.errors import (
     ValidationError,
     NotFoundError,
     ForbiddenError,
-)
-from manager.app.utils.api_responses import (
-    success_response,
-    error_response,
-    validation_error_response,
 )
 
 logger = logging.getLogger(__name__)
@@ -63,10 +58,7 @@ def get_marchproxy_status() -> Tuple[Dict[str, Any], int]:
         # Get MarchProxy client from app context
         marchproxy_client = current_app.extensions.get("marchproxy_client")
         if not marchproxy_client:
-            return error_response(
-                "MarchProxy client not initialized",
-                status_code=500,
-            )
+            return jsonify({'error': 'MarchProxy client not initialized'}), 500
 
         # Check connection status asynchronously
         try:
@@ -113,14 +105,11 @@ def get_marchproxy_status() -> Tuple[Dict[str, Any], int]:
             "routes": routes if detailed else [],
         }
 
-        return success_response(data=response_data)
+        return jsonify(response_data), 200
 
     except Exception as e:
         logger.error(f"Error getting MarchProxy status: {e}")
-        return error_response(
-            f"Failed to get MarchProxy status: {str(e)}",
-            status_code=500,
-        )
+        return jsonify({'error': 'Failed to get MarchProxy status'}), 500
 
 
 @marchproxy_bp.route("/routes", methods=["GET"])
@@ -140,7 +129,7 @@ def list_marchproxy_routes() -> Tuple[Dict[str, Any], int]:
 
         db = current_app.extensions.get("db")
         if not db:
-            return error_response("Database not initialized", status_code=500)
+            return jsonify({'error': 'Database not initialized'}), 500
 
         # Get all configured MarchProxy routes from database
         routes = db(db.marchproxy_configs.status != "deleted").select()
@@ -204,14 +193,11 @@ def list_marchproxy_routes() -> Tuple[Dict[str, Any], int]:
             "routes": route_list,
         }
 
-        return success_response(data=response_data)
+        return jsonify(response_data), 200
 
     except Exception as e:
         logger.error(f"Error listing MarchProxy routes: {e}")
-        return error_response(
-            f"Failed to list routes: {str(e)}",
-            status_code=500,
-        )
+        return jsonify({'error': 'Failed to list routes'}), 500
 
 
 @marchproxy_bp.route("/resources/<resource_id>/marchproxy", methods=["PUT"])
@@ -235,10 +221,7 @@ def configure_resource_marchproxy(resource_id: str) -> Tuple[Dict[str, Any], int
     """
     try:
         if not request.is_json:
-            return error_response(
-                "Content-Type must be application/json",
-                status_code=400,
-            )
+            return jsonify({'error': 'Content-Type must be application/json'}), 400
 
         request_data = request.get_json()
 
@@ -250,11 +233,11 @@ def configure_resource_marchproxy(resource_id: str) -> Tuple[Dict[str, Any], int
             for error in e.errors():
                 field = ".".join(str(x) for x in error["loc"])
                 validation_errors[field] = error["msg"]
-            return validation_error_response(validation_errors)
+            return jsonify({'error': 'Validation failed'}), 422
 
         db = current_app.extensions.get("db")
         if not db:
-            return error_response("Database not initialized", status_code=500)
+            return jsonify({'error': 'Database not initialized'}), 500
 
         # Check resource exists
         resource = db(
@@ -262,7 +245,7 @@ def configure_resource_marchproxy(resource_id: str) -> Tuple[Dict[str, Any], int
         ).select().first()
 
         if not resource:
-            return error_response("Resource not found", status_code=404)
+            return jsonify({'error': 'Resource not found'}), 404
 
         # Check if MarchProxy config exists for resource
         existing_config = db(
@@ -371,14 +354,11 @@ def configure_resource_marchproxy(resource_id: str) -> Tuple[Dict[str, Any], int
             f"(user: {current_user.email})"
         )
 
-        return success_response(data=response_data, message=message)
+        return jsonify(response_data), 200
 
     except Exception as e:
         logger.error(f"Error configuring MarchProxy for resource {resource_id}: {e}")
-        return error_response(
-            f"Failed to configure MarchProxy: {str(e)}",
-            status_code=500,
-        )
+        return jsonify({'error': 'Failed to configure MarchProxy'}), 500
 
 
 @marchproxy_bp.route("/resources/<resource_id>/marchproxy", methods=["DELETE"])
@@ -396,7 +376,7 @@ def remove_resource_marchproxy(resource_id: str) -> Tuple[Dict[str, Any], int]:
     try:
         db = current_app.extensions.get("db")
         if not db:
-            return error_response("Database not initialized", status_code=500)
+            return jsonify({'error': 'Database not initialized'}), 500
 
         # Check resource exists
         resource = db(
@@ -404,7 +384,7 @@ def remove_resource_marchproxy(resource_id: str) -> Tuple[Dict[str, Any], int]:
         ).select().first()
 
         if not resource:
-            return error_response("Resource not found", status_code=404)
+            return jsonify({'error': 'Resource not found'}), 404
 
         # Find and delete MarchProxy config
         config = db(
@@ -413,10 +393,7 @@ def remove_resource_marchproxy(resource_id: str) -> Tuple[Dict[str, Any], int]:
         ).select().first()
 
         if not config:
-            return error_response(
-                "MarchProxy configuration not found for resource",
-                status_code=404,
-            )
+            return jsonify({'error': 'MarchProxy configuration not found for resource'}), 404
 
         # Soft delete configuration
         db(db.marchproxy_configs.id == config.id).update(
@@ -454,17 +431,11 @@ def remove_resource_marchproxy(resource_id: str) -> Tuple[Dict[str, Any], int]:
             f"(user: {current_user.email})"
         )
 
-        return success_response(
-            data={"resource_id": resource_id, "status": "deleted"},
-            message="MarchProxy configuration removed successfully",
-        )
+        return jsonify({"resource_id": resource_id, "status": "deleted"}), 200
 
     except Exception as e:
         logger.error(f"Error removing MarchProxy from resource {resource_id}: {e}")
-        return error_response(
-            f"Failed to remove MarchProxy configuration: {str(e)}",
-            status_code=500,
-        )
+        return jsonify({'error': 'Failed to remove MarchProxy configuration'}), 500
 
 
 @marchproxy_bp.route("/sync", methods=["POST"])
@@ -487,14 +458,11 @@ def sync_marchproxy_configs() -> Tuple[Dict[str, Any], int]:
 
         db = current_app.extensions.get("db")
         if not db:
-            return error_response("Database not initialized", status_code=500)
+            return jsonify({'error': 'Database not initialized'}), 500
 
         marchproxy_client = current_app.extensions.get("marchproxy_client")
         if not marchproxy_client:
-            return error_response(
-                "MarchProxy client not initialized",
-                status_code=500,
-            )
+            return jsonify({'error': 'MarchProxy client not initialized'}), 500
 
         # Get all enabled configurations
         configs = db(
@@ -595,18 +563,11 @@ def sync_marchproxy_configs() -> Tuple[Dict[str, Any], int]:
             response_data["error_count"] = len(errors)
 
         status_code = 200 if not errors else 207
-        return success_response(
-            data=response_data,
-            message=f"Synced {len(sync_results)} configurations",
-            status_code=status_code,
-        )
+        return jsonify(response_data), status_code
 
     except Exception as e:
         logger.error(f"Error syncing MarchProxy configurations: {e}")
-        return error_response(
-            f"Failed to sync MarchProxy configurations: {str(e)}",
-            status_code=500,
-        )
+        return jsonify({'error': 'Failed to sync MarchProxy configurations'}), 500
 
 
 def _get_protocol_from_engine(engine: str) -> str:

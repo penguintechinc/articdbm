@@ -15,13 +15,7 @@ from typing import Any, Dict, Optional, Tuple
 from flask import Blueprint, request, current_app
 from flask_security import login_required, current_user
 
-from manager.app.services.tagging import TaggingService, TaggingServiceException
-from manager.app.utils.api_responses import (
-    success_response,
-    error_response,
-    not_found_response,
-    validation_error_response,
-)
+from app.services.tagging import TaggingService, TaggingServiceException
 
 logger = logging.getLogger(__name__)
 
@@ -53,7 +47,7 @@ def list_tags() -> Tuple[Dict[str, Any], int]:
     try:
         db = current_app.extensions.get("db")
         if not db:
-            return error_response("Database not initialized", status_code=500)
+            return jsonify({'error': 'Database not initialized'}), 500
 
         # Get optional filter parameters
         resource_id = request.args.get("resource_id", type=int)
@@ -112,14 +106,11 @@ def list_tags() -> Tuple[Dict[str, Any], int]:
         if resource_type:
             response_data["resource_type"] = resource_type
 
-        return success_response(data=response_data)
+        return jsonify(response_data), 200
 
     except Exception as e:
         logger.error(f"Error listing tags: {e}")
-        return error_response(
-            f"Failed to list tags: {str(e)}",
-            status_code=500,
-        )
+        return jsonify({'error': 'Failed to list tags'}), 500
 
 
 @tags_bp.route("/<int:resource_id>/add", methods=["POST"])
@@ -140,27 +131,24 @@ def add_tags_to_resource(resource_id: int) -> Tuple[Dict[str, Any], int]:
     """
     try:
         if not request.is_json:
-            return error_response(
-                "Content-Type must be application/json",
-                status_code=400
-            )
+            return jsonify({'error': 'Content-Type must be application/json'}), 400
 
         request_data = request.get_json()
 
         # Validate required fields
         if not request_data or "tags" not in request_data:
-            return validation_error_response({"tags": "tags field is required"})
+            return jsonify({'error': 'tags field is required'}), 422
 
         tags = request_data.get("tags")
         if not isinstance(tags, dict):
-            return validation_error_response({"tags": "tags must be a dictionary"})
+            return jsonify({'error': 'tags must be a dictionary'}), 422
 
         if not tags:
-            return validation_error_response({"tags": "tags cannot be empty"})
+            return jsonify({'error': 'tags cannot be empty'}), 422
 
         db = current_app.extensions.get("db")
         if not db:
-            return error_response("Database not initialized", status_code=500)
+            return jsonify({'error': 'Database not initialized'}), 500
 
         # Verify resource exists
         resource = db(
@@ -168,7 +156,7 @@ def add_tags_to_resource(resource_id: int) -> Tuple[Dict[str, Any], int]:
         ).select().first()
 
         if not resource:
-            return not_found_response("Resource")
+            return jsonify({'error': 'Resource not found'}), 404
 
         # Create tagging service
         provisioner_registry = current_app.extensions.get("provisioner_registry", {})
@@ -204,24 +192,14 @@ def add_tags_to_resource(resource_id: int) -> Tuple[Dict[str, Any], int]:
             f"(user: {current_user.email})"
         )
 
-        return success_response(
-            data=result,
-            message="Tags added successfully",
-            status_code=201,
-        )
+        return jsonify(result), 201
 
     except TaggingServiceException as e:
         logger.error(f"Tagging service error: {e}")
-        return error_response(
-            f"Failed to add tags: {str(e)}",
-            status_code=400,
-        )
+        return jsonify({'error': 'Failed to add tags'}), 400
     except Exception as e:
         logger.error(f"Error adding tags to resource {resource_id}: {e}")
-        return error_response(
-            f"Failed to add tags: {str(e)}",
-            status_code=500,
-        )
+        return jsonify({'error': 'Failed to add tags'}), 500
 
 
 @tags_bp.route("/<int:resource_id>/tags/<tag_key>", methods=["DELETE"])
@@ -242,11 +220,11 @@ def remove_tag_from_resource(
     """
     try:
         if not tag_key or not tag_key.strip():
-            return validation_error_response({"tag_key": "tag_key cannot be empty"})
+            return jsonify({'error': 'tag_key cannot be empty'}), 422
 
         db = current_app.extensions.get("db")
         if not db:
-            return error_response("Database not initialized", status_code=500)
+            return jsonify({'error': 'Database not initialized'}), 500
 
         # Verify resource exists
         resource = db(
@@ -254,7 +232,7 @@ def remove_tag_from_resource(
         ).select().first()
 
         if not resource:
-            return not_found_response("Resource")
+            return jsonify({'error': 'Resource not found'}), 404
 
         # Create tagging service
         provisioner_registry = current_app.extensions.get("provisioner_registry", {})
@@ -282,36 +260,21 @@ def remove_tag_from_resource(
                 loop.close()
 
         if not removed:
-            return error_response(
-                f"Tag '{tag_key}' not found on resource",
-                status_code=404,
-            )
+            return jsonify({'error': f"Tag '{tag_key}' not found on resource"}), 404
 
         logger.info(
             f"Tag removed from resource {resource_id}: {tag_key} "
             f"(user: {current_user.email})"
         )
 
-        return success_response(
-            data={
-                "resource_id": resource_id,
-                "removed_tag_key": tag_key,
-            },
-            message="Tag removed successfully",
-        )
+        return jsonify({"resource_id": resource_id, "removed_tag_key": tag_key}), 200
 
     except TaggingServiceException as e:
         logger.error(f"Tagging service error: {e}")
-        return error_response(
-            f"Failed to remove tag: {str(e)}",
-            status_code=400,
-        )
+        return jsonify({'error': 'Failed to remove tag'}), 400
     except Exception as e:
         logger.error(f"Error removing tag from resource {resource_id}: {e}")
-        return error_response(
-            f"Failed to remove tag: {str(e)}",
-            status_code=500,
-        )
+        return jsonify({'error': 'Failed to remove tag'}), 500
 
 
 @tags_bp.route("/sync", methods=["POST"])
@@ -335,7 +298,7 @@ def sync_all_pending_tags() -> Tuple[Dict[str, Any], int]:
     try:
         db = current_app.extensions.get("db")
         if not db:
-            return error_response("Database not initialized", status_code=500)
+            return jsonify({'error': 'Database not initialized'}), 500
 
         # Create tagging service
         provisioner_registry = current_app.extensions.get("provisioner_registry", {})
@@ -373,23 +336,14 @@ def sync_all_pending_tags() -> Tuple[Dict[str, Any], int]:
             f"(user: {current_user.email})"
         )
 
-        return success_response(
-            data=result,
-            message="Tag sync operation completed",
-        )
+        return jsonify(result), 200
 
     except TaggingServiceException as e:
         logger.error(f"Tagging service error during sync: {e}")
-        return error_response(
-            f"Failed to sync tags: {str(e)}",
-            status_code=400,
-        )
+        return jsonify({'error': 'Failed to sync tags'}), 400
     except Exception as e:
         logger.error(f"Error syncing pending tags: {e}")
-        return error_response(
-            f"Failed to sync tags: {str(e)}",
-            status_code=500,
-        )
+        return jsonify({'error': 'Failed to sync tags'}), 500
 
 
 @tags_bp.route("/<int:resource_id>/tags", methods=["GET"])
@@ -407,7 +361,7 @@ def get_resource_tags(resource_id: int) -> Tuple[Dict[str, Any], int]:
     try:
         db = current_app.extensions.get("db")
         if not db:
-            return error_response("Database not initialized", status_code=500)
+            return jsonify({'error': 'Database not initialized'}), 500
 
         # Verify resource exists
         resource = db(
@@ -415,7 +369,7 @@ def get_resource_tags(resource_id: int) -> Tuple[Dict[str, Any], int]:
         ).select().first()
 
         if not resource:
-            return not_found_response("Resource")
+            return jsonify({'error': 'Resource not found'}), 404
 
         # Create tagging service
         provisioner_registry = current_app.extensions.get("provisioner_registry", {})
@@ -448,17 +402,11 @@ def get_resource_tags(resource_id: int) -> Tuple[Dict[str, Any], int]:
             "tag_count": len(tags),
         }
 
-        return success_response(data=response_data)
+        return jsonify(response_data), 200
 
     except TaggingServiceException as e:
         logger.error(f"Tagging service error: {e}")
-        return error_response(
-            f"Failed to get tags: {str(e)}",
-            status_code=400,
-        )
+        return jsonify({'error': 'Failed to get tags'}), 400
     except Exception as e:
         logger.error(f"Error getting tags for resource {resource_id}: {e}")
-        return error_response(
-            f"Failed to get tags: {str(e)}",
-            status_code=500,
-        )
+        return jsonify({'error': 'Failed to get tags'}), 500

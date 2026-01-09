@@ -11,7 +11,7 @@ from flask import Blueprint, request, jsonify, current_app
 from flask_security import login_required, current_user
 from pydantic import ValidationError as PydanticValidationError
 
-from manager.app.schemas.application import (
+from app.schemas.application import (
     ApplicationCreate,
     ApplicationUpdate,
     ApplicationResponse,
@@ -20,18 +20,12 @@ from manager.app.schemas.application import (
     ElderSyncResponse,
     Pagination,
 )
-from manager.app.utils.api_responses import (
-    success_response,
-    created_response,
-    error_response,
-    not_found_response,
-)
-from manager.app.api.errors import (
+from app.api.errors import (
     ValidationError,
     NotFoundError,
     ForbiddenError,
 )
-from manager.app.services.sync.elder import ElderSyncService
+from app.services.sync.elder import ElderSyncService
 
 logger = logging.getLogger(__name__)
 
@@ -77,19 +71,13 @@ def list_applications() -> Tuple[Dict[str, Any], int]:
         db = current_app.config.get('db')
         if not db:
             logger.error("Database instance not available")
-            return error_response(
-                error="Database service unavailable",
-                status_code=500
-            )
+            return jsonify({'error': 'Database service unavailable'}), 500
 
         # Query applications for current organization
         # Assuming user has organization_id and applications are filtered by it
         organization_id = getattr(current_user, 'organization_id', None)
         if not organization_id:
-            return error_response(
-                error="User organization not set",
-                status_code=400
-            )
+            return jsonify({'error': 'User organization not set'}), 400
 
         # Get total count
         total = db(db.applications.organization_id == organization_id).count()
@@ -140,25 +128,13 @@ def list_applications() -> Tuple[Dict[str, Any], int]:
             pagination=pagination
         )
 
-        return success_response(
-            data=response_data.model_dump(mode='json'),
-            message=f"Retrieved {len(applications)} applications",
-            status_code=200
-        )
+        return jsonify(response_data.model_dump(mode='json')), 200
 
     except ValidationError as e:
-        return error_response(
-            error=e.message,
-            details=e.details,
-            status_code=422
-        )
+        return jsonify({'error': 'Validation error'}), 422
     except Exception as e:
         logger.error(f"Error listing applications: {str(e)}")
-        return error_response(
-            error="Failed to list applications",
-            details={"message": str(e)},
-            status_code=500
-        )
+        return jsonify({'error': 'Failed to list applications'}), 500
 
 
 @applications_bp.route('', methods=['POST'])
@@ -193,17 +169,11 @@ def create_application() -> Tuple[Dict[str, Any], int]:
         db = current_app.config.get('db')
         if not db:
             logger.error("Database instance not available")
-            return error_response(
-                error="Database service unavailable",
-                status_code=500
-            )
+            return jsonify({'error': 'Database service unavailable'}), 500
 
         organization_id = getattr(current_user, 'organization_id', None)
         if not organization_id:
-            return error_response(
-                error="User organization not set",
-                status_code=400
-            )
+            return jsonify({'error': 'User organization not set'}), 400
 
         # Create application in database
         app_id = db.applications.insert(
@@ -236,28 +206,17 @@ def create_application() -> Tuple[Dict[str, Any], int]:
 
         logger.info(f"Created application {app_id} for organization {organization_id}")
 
-        return created_response(
-            data=response_obj.model_dump(mode='json'),
-            message=f"Application '{app_create.name}' created successfully"
-        )
+        return jsonify(response_obj.model_dump(mode='json')), 201
 
     except PydanticValidationError as e:
         error_dict = {}
         for error in e.errors():
             field = '.'.join(str(x) for x in error['loc'])
             error_dict[field] = error['msg']
-        return error_response(
-            error="Validation failed",
-            details=error_dict,
-            status_code=422
-        )
+        return jsonify({'error': 'Validation failed'}), 422
     except Exception as e:
         logger.error(f"Error creating application: {str(e)}")
-        return error_response(
-            error="Failed to create application",
-            details={"message": str(e)},
-            status_code=500
-        )
+        return jsonify({'error': 'Failed to create application'}), 500
 
 
 @applications_bp.route('/<int:application_id>', methods=['GET'])
@@ -282,18 +241,12 @@ def get_application(application_id: int) -> Tuple[Dict[str, Any], int]:
         db = current_app.config.get('db')
         if not db:
             logger.error("Database instance not available")
-            return error_response(
-                error="Database service unavailable",
-                status_code=500
-            )
+            return jsonify({'error': 'Database service unavailable'}), 500
 
         # Get organization to verify access
         organization_id = getattr(current_user, 'organization_id', None)
         if not organization_id:
-            return error_response(
-                error="User organization not set",
-                status_code=400
-            )
+            return jsonify({'error': 'User organization not set'}), 400
 
         # Fetch application
         row = db(
@@ -306,7 +259,7 @@ def get_application(application_id: int) -> Tuple[Dict[str, Any], int]:
                 f"Application {application_id} not found for user "
                 f"in organization {organization_id}"
             )
-            return not_found_response("Application")
+            return jsonify({'error': 'Application not found'}), 404
 
         row = row[0]
 
@@ -332,18 +285,11 @@ def get_application(application_id: int) -> Tuple[Dict[str, Any], int]:
         }
         response_obj = ApplicationResponse(**app_data)
 
-        return success_response(
-            data=response_obj.model_dump(mode='json'),
-            status_code=200
-        )
+        return jsonify(response_obj.model_dump(mode='json')), 200
 
     except Exception as e:
         logger.error(f"Error fetching application {application_id}: {str(e)}")
-        return error_response(
-            error="Failed to fetch application",
-            details={"message": str(e)},
-            status_code=500
-        )
+        return jsonify({'error': 'Failed to fetch application'}), 500
 
 
 @applications_bp.route('/<int:application_id>', methods=['PUT'])
@@ -381,18 +327,12 @@ def update_application(application_id: int) -> Tuple[Dict[str, Any], int]:
         db = current_app.config.get('db')
         if not db:
             logger.error("Database instance not available")
-            return error_response(
-                error="Database service unavailable",
-                status_code=500
-            )
+            return jsonify({'error': 'Database service unavailable'}), 500
 
         # Get organization to verify access
         organization_id = getattr(current_user, 'organization_id', None)
         if not organization_id:
-            return error_response(
-                error="User organization not set",
-                status_code=400
-            )
+            return jsonify({'error': 'User organization not set'}), 400
 
         # Fetch application
         row = db(
@@ -405,7 +345,7 @@ def update_application(application_id: int) -> Tuple[Dict[str, Any], int]:
                 f"Application {application_id} not found for update "
                 f"in organization {organization_id}"
             )
-            return not_found_response("Application")
+            return jsonify({'error': 'Application not found'}), 404
 
         # Build update fields
         update_dict = {}
@@ -447,29 +387,17 @@ def update_application(application_id: int) -> Tuple[Dict[str, Any], int]:
 
         logger.info(f"Updated application {application_id}")
 
-        return success_response(
-            data=response_obj.model_dump(mode='json'),
-            message="Application updated successfully",
-            status_code=200
-        )
+        return jsonify(response_obj.model_dump(mode='json')), 200
 
     except PydanticValidationError as e:
         error_dict = {}
         for error in e.errors():
             field = '.'.join(str(x) for x in error['loc'])
             error_dict[field] = error['msg']
-        return error_response(
-            error="Validation failed",
-            details=error_dict,
-            status_code=422
-        )
+        return jsonify({'error': 'Validation failed'}), 422
     except Exception as e:
         logger.error(f"Error updating application {application_id}: {str(e)}")
-        return error_response(
-            error="Failed to update application",
-            details={"message": str(e)},
-            status_code=500
-        )
+        return jsonify({'error': 'Failed to update application'}), 500
 
 
 @applications_bp.route('/<int:application_id>', methods=['DELETE'])
@@ -495,18 +423,12 @@ def delete_application(application_id: int) -> Tuple[Dict[str, Any], int]:
         db = current_app.config.get('db')
         if not db:
             logger.error("Database instance not available")
-            return error_response(
-                error="Database service unavailable",
-                status_code=500
-            )
+            return jsonify({'error': 'Database service unavailable'}), 500
 
         # Get organization to verify access
         organization_id = getattr(current_user, 'organization_id', None)
         if not organization_id:
-            return error_response(
-                error="User organization not set",
-                status_code=400
-            )
+            return jsonify({'error': 'User organization not set'}), 400
 
         # Fetch application
         row = db(
@@ -519,7 +441,7 @@ def delete_application(application_id: int) -> Tuple[Dict[str, Any], int]:
                 f"Application {application_id} not found for deletion "
                 f"in organization {organization_id}"
             )
-            return not_found_response("Application")
+            return jsonify({'error': 'Application not found'}), 404
 
         # Check for dependent resources
         resource_count = db(
@@ -531,14 +453,7 @@ def delete_application(application_id: int) -> Tuple[Dict[str, Any], int]:
                 f"Cannot delete application {application_id}: "
                 f"{resource_count} dependent resources exist"
             )
-            return error_response(
-                error="Application has dependent resources",
-                details={
-                    "message": f"Cannot delete application with {resource_count} resources",
-                    "resource_count": resource_count
-                },
-                status_code=409
-            )
+            return jsonify({'error': 'Application has dependent resources'}), 409
 
         # Delete application
         db(db.applications.id == application_id).delete()
@@ -546,18 +461,11 @@ def delete_application(application_id: int) -> Tuple[Dict[str, Any], int]:
 
         logger.info(f"Deleted application {application_id}")
 
-        return success_response(
-            message=f"Application {application_id} deleted successfully",
-            status_code=200
-        )
+        return jsonify({'message': f'Application {application_id} deleted successfully'}), 200
 
     except Exception as e:
         logger.error(f"Error deleting application {application_id}: {str(e)}")
-        return error_response(
-            error="Failed to delete application",
-            details={"message": str(e)},
-            status_code=500
-        )
+        return jsonify({'error': 'Failed to delete application'}), 500
 
 
 @applications_bp.route('/<int:application_id>/resources', methods=['GET'])
@@ -597,18 +505,12 @@ def get_application_resources(application_id: int) -> Tuple[Dict[str, Any], int]
         db = current_app.config.get('db')
         if not db:
             logger.error("Database instance not available")
-            return error_response(
-                error="Database service unavailable",
-                status_code=500
-            )
+            return jsonify({'error': 'Database service unavailable'}), 500
 
         # Get organization to verify access
         organization_id = getattr(current_user, 'organization_id', None)
         if not organization_id:
-            return error_response(
-                error="User organization not set",
-                status_code=400
-            )
+            return jsonify({'error': 'User organization not set'}), 400
 
         # Verify application exists and belongs to organization
         app = db(
@@ -621,7 +523,7 @@ def get_application_resources(application_id: int) -> Tuple[Dict[str, Any], int]
                 f"Application {application_id} not found for resources retrieval "
                 f"in organization {organization_id}"
             )
-            return not_found_response("Application")
+            return jsonify({'error': 'Application not found'}), 404
 
         # Get total count of resources
         total = db(db.resources.application_id == application_id).count()
@@ -658,27 +560,15 @@ def get_application_resources(application_id: int) -> Tuple[Dict[str, Any], int]
             'has_previous': page > 1,
         }
 
-        return success_response(
-            data=response_data,
-            message=f"Retrieved {len(resources)} resources for application {application_id}",
-            status_code=200
-        )
+        return jsonify(response_data), 200
 
     except ValidationError as e:
-        return error_response(
-            error=e.message,
-            details=e.details,
-            status_code=422
-        )
+        return jsonify({'error': 'Validation error'}), 422
     except Exception as e:
         logger.error(
             f"Error listing resources for application {application_id}: {str(e)}"
         )
-        return error_response(
-            error="Failed to list resources",
-            details={"message": str(e)},
-            status_code=500
-        )
+        return jsonify({'error': 'Failed to list resources'}), 500
 
 
 @applications_bp.route('/<int:application_id>/sync-elder', methods=['POST'])
@@ -715,18 +605,12 @@ def sync_application_with_elder(application_id: int) -> Tuple[Dict[str, Any], in
         db = current_app.config.get('db')
         if not db:
             logger.error("Database instance not available")
-            return error_response(
-                error="Database service unavailable",
-                status_code=500
-            )
+            return jsonify({'error': 'Database service unavailable'}), 500
 
         # Get organization to verify access
         organization_id = getattr(current_user, 'organization_id', None)
         if not organization_id:
-            return error_response(
-                error="User organization not set",
-                status_code=400
-            )
+            return jsonify({'error': 'User organization not set'}), 400
 
         # Verify application exists and belongs to organization
         app = db(
@@ -739,7 +623,7 @@ def sync_application_with_elder(application_id: int) -> Tuple[Dict[str, Any], in
                 f"Application {application_id} not found for Elder sync "
                 f"in organization {organization_id}"
             )
-            return not_found_response("Application")
+            return jsonify({'error': 'Application not found'}), 404
 
         # Get Elder client from app config
         elder_client = current_app.config.get('elder_client')
@@ -769,26 +653,14 @@ def sync_application_with_elder(application_id: int) -> Tuple[Dict[str, Any], in
             errors=[]
         )
 
-        return success_response(
-            data=sync_response.model_dump(mode='json'),
-            message=f"Elder synchronization initiated for application {application_id}",
-            status_code=200
-        )
+        return jsonify(sync_response.model_dump(mode='json')), 200
 
     except PydanticValidationError as e:
         error_dict = {}
         for error in e.errors():
             field = '.'.join(str(x) for x in error['loc'])
             error_dict[field] = error['msg']
-        return error_response(
-            error="Validation failed",
-            details=error_dict,
-            status_code=422
-        )
+        return jsonify({'error': 'Validation failed'}), 422
     except Exception as e:
         logger.error(f"Error syncing application {application_id} with Elder: {str(e)}")
-        return error_response(
-            error="Failed to initiate Elder synchronization",
-            details={"message": str(e)},
-            status_code=500
-        )
+        return jsonify({'error': 'Failed to initiate Elder synchronization'}), 500

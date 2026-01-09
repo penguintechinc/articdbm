@@ -17,7 +17,7 @@ from flask import Blueprint, request, jsonify, current_app
 from flask_security import login_required, current_user
 from pydantic import ValidationError as PydanticValidationError
 
-from manager.app.schemas.resource import (
+from app.schemas.resource import (
     ResourceCreate,
     ResourceUpdate,
     ResourceResponse,
@@ -25,25 +25,17 @@ from manager.app.schemas.resource import (
     ResourceScaleRequest,
     ResourceMetricsRequest,
 )
-from manager.app.services.licensing import LicenseService
-from manager.app.services.provisioning.base import (
+from app.services.licensing import LicenseService
+from app.services.provisioning.base import (
     get_provisioner,
     ProvisionerException,
     ResourceConfig,
 )
-from manager.app.api.errors import (
+from app.api.errors import (
     ValidationError,
     NotFoundError,
     ForbiddenError,
     LicenseLimitError,
-)
-from manager.app.utils.api_responses import (
-    success_response,
-    error_response,
-    created_response,
-    not_found_response,
-    license_limit_response,
-    validation_error_response,
 )
 
 logger = logging.getLogger(__name__)
@@ -109,7 +101,7 @@ def list_resources() -> Tuple[Dict[str, Any], int]:
         # Get database from current_app
         db = current_app.extensions.get("db")
         if not db:
-            return error_response("Database not initialized", status_code=500)
+            return jsonify({'error': 'Database not initialized'}), 500
 
         # Build query
         query = db.resources
@@ -171,14 +163,11 @@ def list_resources() -> Tuple[Dict[str, Any], int]:
             "has_previous": page > 1,
         }
 
-        return success_response(data=response_data)
+        return jsonify(response_data), 200
 
     except Exception as e:
         logger.error(f"Error listing resources: {e}")
-        return error_response(
-            f"Failed to list resources: {str(e)}",
-            status_code=500,
-        )
+        return jsonify({'error': 'Failed to list resources'}), 500
 
 
 @resources_bp.route("", methods=["POST"])
@@ -207,7 +196,7 @@ def create_resource() -> Tuple[Dict[str, Any], int]:
     try:
         # Parse request JSON
         if not request.is_json:
-            return error_response("Content-Type must be application/json", status_code=400)
+            return jsonify({'error': 'Content-Type must be application/json'}), 400
 
         request_data = request.get_json()
 
@@ -220,14 +209,14 @@ def create_resource() -> Tuple[Dict[str, Any], int]:
             for error in e.errors():
                 field = ".".join(str(x) for x in error["loc"])
                 validation_errors[field] = error["msg"]
-            return validation_error_response(validation_errors)
+            return jsonify({'error': 'Validation failed'}), 422
 
         # Check license limits
         db = current_app.extensions.get("db")
         license_client = current_app.extensions.get("license_client")
 
         if not db or not license_client:
-            return error_response("Services not initialized", status_code=500)
+            return jsonify({'error': 'Services not initialized'}), 500
 
         license_service = LicenseService(license_client, db)
 
@@ -244,7 +233,7 @@ def create_resource() -> Tuple[Dict[str, Any], int]:
                 f"Resource limit exceeded: {current_count}/{limit} "
                 f"(user: {current_user.email})"
             )
-            return license_limit_response(limit)
+            return jsonify({'error': 'Resource limit exceeded'}), 403
 
         # Get provisioner for the provider
         try:
@@ -253,7 +242,7 @@ def create_resource() -> Tuple[Dict[str, Any], int]:
             ).select().first()
 
             if not provider_row:
-                return not_found_response("Provider")
+                return jsonify({'error': 'Provider not found'}), 404
 
             # Build provisioner config
             provisioner_config = {
@@ -336,21 +325,15 @@ def create_resource() -> Tuple[Dict[str, Any], int]:
                 f"(id: {resource_id}, user: {current_user.email})"
             )
 
-            return created_response(response_data, message="Resource created successfully")
+            return jsonify(response_data), 201
 
         except ProvisionerException as e:
             logger.error(f"Provisioning error: {e}")
-            return error_response(
-                f"Failed to provision resource: {str(e)}",
-                status_code=400,
-            )
+            return jsonify({'error': 'Failed to provision resource'}), 400
 
     except Exception as e:
         logger.error(f"Error creating resource: {e}")
-        return error_response(
-            f"Failed to create resource: {str(e)}",
-            status_code=500,
-        )
+        return jsonify({'error': 'Failed to create resource'}), 500
 
 
 @resources_bp.route("/<resource_id>", methods=["GET"])
@@ -368,24 +351,21 @@ def get_resource(resource_id: str) -> Tuple[Dict[str, Any], int]:
     try:
         db = current_app.extensions.get("db")
         if not db:
-            return error_response("Database not initialized", status_code=500)
+            return jsonify({'error': 'Database not initialized'}), 500
 
         resource = db(
             (db.resources.id == resource_id) & (db.resources.status != "deleted")
         ).select().first()
 
         if not resource:
-            return not_found_response("Resource")
+            return jsonify({'error': 'Resource not found'}), 404
 
         response_data = _resource_row_to_response(resource)
-        return success_response(data=response_data)
+        return jsonify(response_data), 200
 
     except Exception as e:
         logger.error(f"Error getting resource {resource_id}: {e}")
-        return error_response(
-            f"Failed to get resource: {str(e)}",
-            status_code=500,
-        )
+        return jsonify({'error': 'Failed to get resource'}), 500
 
 
 @resources_bp.route("/<resource_id>", methods=["PUT"])
@@ -409,7 +389,7 @@ def update_resource(resource_id: str) -> Tuple[Dict[str, Any], int]:
     """
     try:
         if not request.is_json:
-            return error_response("Content-Type must be application/json", status_code=400)
+            return jsonify({'error': 'Content-Type must be application/json'}), 400
 
         request_data = request.get_json()
 
@@ -421,11 +401,11 @@ def update_resource(resource_id: str) -> Tuple[Dict[str, Any], int]:
             for error in e.errors():
                 field = ".".join(str(x) for x in error["loc"])
                 validation_errors[field] = error["msg"]
-            return validation_error_response(validation_errors)
+            return jsonify({'error': 'Validation failed'}), 422
 
         db = current_app.extensions.get("db")
         if not db:
-            return error_response("Database not initialized", status_code=500)
+            return jsonify({'error': 'Database not initialized'}), 500
 
         # Check resource exists
         resource = db(
@@ -433,7 +413,7 @@ def update_resource(resource_id: str) -> Tuple[Dict[str, Any], int]:
         ).select().first()
 
         if not resource:
-            return not_found_response("Resource")
+            return jsonify({'error': 'Resource not found'}), 404
 
         # Build update dict (only include provided fields)
         update_data = {
@@ -465,14 +445,11 @@ def update_resource(resource_id: str) -> Tuple[Dict[str, Any], int]:
 
         logger.info(f"Resource updated: {resource_id} (user: {current_user.email})")
 
-        return success_response(data=response_data, message="Resource updated successfully")
+        return jsonify(response_data), 200
 
     except Exception as e:
         logger.error(f"Error updating resource {resource_id}: {e}")
-        return error_response(
-            f"Failed to update resource: {str(e)}",
-            status_code=500,
-        )
+        return jsonify({'error': 'Failed to update resource'}), 500
 
 
 @resources_bp.route("/<resource_id>", methods=["DELETE"])
@@ -490,7 +467,7 @@ def delete_resource(resource_id: str) -> Tuple[Dict[str, Any], int]:
     try:
         db = current_app.extensions.get("db")
         if not db:
-            return error_response("Database not initialized", status_code=500)
+            return jsonify({'error': 'Database not initialized'}), 500
 
         # Check resource exists
         resource = db(
@@ -498,7 +475,7 @@ def delete_resource(resource_id: str) -> Tuple[Dict[str, Any], int]:
         ).select().first()
 
         if not resource:
-            return not_found_response("Resource")
+            return jsonify({'error': 'Resource not found'}), 404
 
         # Get provisioner to clean up provider resources
         try:
@@ -548,17 +525,11 @@ def delete_resource(resource_id: str) -> Tuple[Dict[str, Any], int]:
 
         logger.info(f"Resource deleted: {resource_id} (user: {current_user.email})")
 
-        return success_response(
-            data={"id": resource_id, "status": "deleted"},
-            message="Resource deleted successfully",
-        )
+        return jsonify({"id": resource_id, "status": "deleted"}), 200
 
     except Exception as e:
         logger.error(f"Error deleting resource {resource_id}: {e}")
-        return error_response(
-            f"Failed to delete resource: {str(e)}",
-            status_code=500,
-        )
+        return jsonify({'error': 'Failed to delete resource'}), 500
 
 
 @resources_bp.route("/<resource_id>/scale", methods=["POST"])
@@ -580,7 +551,7 @@ def scale_resource(resource_id: str) -> Tuple[Dict[str, Any], int]:
     """
     try:
         if not request.is_json:
-            return error_response("Content-Type must be application/json", status_code=400)
+            return jsonify({'error': 'Content-Type must be application/json'}), 400
 
         request_data = request.get_json()
 
@@ -592,11 +563,11 @@ def scale_resource(resource_id: str) -> Tuple[Dict[str, Any], int]:
             for error in e.errors():
                 field = ".".join(str(x) for x in error["loc"])
                 validation_errors[field] = error["msg"]
-            return validation_error_response(validation_errors)
+            return jsonify({'error': 'Validation failed'}), 422
 
         db = current_app.extensions.get("db")
         if not db:
-            return error_response("Database not initialized", status_code=500)
+            return jsonify({'error': 'Database not initialized'}), 500
 
         # Check resource exists
         resource = db(
@@ -604,7 +575,7 @@ def scale_resource(resource_id: str) -> Tuple[Dict[str, Any], int]:
         ).select().first()
 
         if not resource:
-            return not_found_response("Resource")
+            return jsonify({'error': 'Resource not found'}), 404
 
         # Get provisioner
         try:
@@ -613,7 +584,7 @@ def scale_resource(resource_id: str) -> Tuple[Dict[str, Any], int]:
             ).select().first()
 
             if not provider_row:
-                return not_found_response("Provider")
+                return jsonify({'error': 'Provider not found'}), 404
 
             provisioner_config = {
                 "credentials": provider_row.credentials or {},
@@ -692,17 +663,11 @@ def scale_resource(resource_id: str) -> Tuple[Dict[str, Any], int]:
 
         except ProvisionerException as e:
             logger.error(f"Provisioning error during scaling: {e}")
-            return error_response(
-                f"Failed to scale resource: {str(e)}",
-                status_code=400,
-            )
+            return jsonify({'error': 'Failed to scale resource'}), 400
 
     except Exception as e:
         logger.error(f"Error scaling resource {resource_id}: {e}")
-        return error_response(
-            f"Failed to scale resource: {str(e)}",
-            status_code=500,
-        )
+        return jsonify({'error': 'Failed to scale resource'}), 500
 
 
 @resources_bp.route("/<resource_id>/metrics", methods=["GET"])
@@ -730,27 +695,21 @@ def get_resource_metrics(resource_id: str) -> Tuple[Dict[str, Any], int]:
 
         # Validate parameters
         if not metric_name:
-            return error_response("metric_name parameter required", status_code=400)
+            return jsonify({'error': 'metric_name parameter required'}), 400
 
         if not start_time_str or not end_time_str:
-            return error_response(
-                "start_time and end_time parameters required",
-                status_code=400,
-            )
+            return jsonify({'error': 'start_time and end_time parameters required'}), 400
 
         # Parse timestamps
         try:
             start_time = datetime.fromisoformat(start_time_str.replace("Z", "+00:00"))
             end_time = datetime.fromisoformat(end_time_str.replace("Z", "+00:00"))
         except ValueError:
-            return error_response(
-                "Invalid timestamp format. Use ISO 8601 format.",
-                status_code=400,
-            )
+            return jsonify({'error': 'Invalid timestamp format. Use ISO 8601 format.'}), 400
 
         db = current_app.extensions.get("db")
         if not db:
-            return error_response("Database not initialized", status_code=500)
+            return jsonify({'error': 'Database not initialized'}), 500
 
         # Check resource exists
         resource = db(
@@ -758,7 +717,7 @@ def get_resource_metrics(resource_id: str) -> Tuple[Dict[str, Any], int]:
         ).select().first()
 
         if not resource:
-            return not_found_response("Resource")
+            return jsonify({'error': 'Resource not found'}), 404
 
         # Get provisioner to retrieve metrics
         try:
@@ -767,7 +726,7 @@ def get_resource_metrics(resource_id: str) -> Tuple[Dict[str, Any], int]:
             ).select().first()
 
             if not provider_row:
-                return not_found_response("Provider")
+                return jsonify({'error': 'Provider not found'}), 404
 
             provisioner_config = {
                 "credentials": provider_row.credentials or {},
@@ -817,21 +776,15 @@ def get_resource_metrics(resource_id: str) -> Tuple[Dict[str, Any], int]:
                 "data_points": metrics_data,
             }
 
-            return success_response(data=response_data)
+            return jsonify(response_data), 200
 
         except ProvisionerException as e:
             logger.error(f"Provisioning error retrieving metrics: {e}")
-            return error_response(
-                f"Failed to retrieve metrics: {str(e)}",
-                status_code=400,
-            )
+            return jsonify({'error': 'Failed to retrieve metrics'}), 400
 
     except Exception as e:
         logger.error(f"Error getting metrics for resource {resource_id}: {e}")
-        return error_response(
-            f"Failed to get metrics: {str(e)}",
-            status_code=500,
-        )
+        return jsonify({'error': 'Failed to get metrics'}), 500
 
 
 def _resource_row_to_response(resource_row: Any) -> Dict[str, Any]:

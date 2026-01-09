@@ -21,13 +21,6 @@ from app.services.credentials.jwt import JWTCredentialService
 from app.services.credentials.iam import IAMCredentialService
 from app.services.credentials.mtls import MTLSCredentialService
 from app.extensions import pydal_manager
-from app.utils.api_responses import (
-    success_response,
-    error_response,
-    created_response,
-    not_found_response,
-    forbidden_response,
-)
 
 logger = logging.getLogger(__name__)
 
@@ -117,11 +110,11 @@ def list_credentials():
             'has_previous': page > 1,
         }
 
-        return success_response(data=response_data, message='Credentials retrieved')
+        return jsonify(response_data), 200
 
     except Exception as e:
         logger.error(f"Failed to list credentials: {e}")
-        return error_response(error='Failed to list credentials', details=str(e), status_code=500)
+        return jsonify({'error': 'Failed to list credentials'}), 500
 
 
 @credentials_bp.route('', methods=['POST'])
@@ -151,18 +144,14 @@ def create_credential():
         try:
             credential_req = CredentialCreate(**data)
         except ValidationError as ve:
-            return error_response(
-                error='Validation failed',
-                details=ve.errors(),
-                status_code=400,
-            )
+            return jsonify({'error': 'Validation failed'}), 400
 
         db = pydal_manager.db
 
         # Fetch resource
         resource_row = db(db.resources.id == credential_req.resource_id).select().first()
         if not resource_row:
-            return not_found_response('Resource')
+            return jsonify({'error': 'Resource not found'}), 404
 
         # Convert resource to dict
         resource_dict = {
@@ -211,10 +200,7 @@ def create_credential():
                 permissions=credential_req.permissions,
             )
         else:
-            return error_response(
-                error=f'Unsupported credential type: {credential_req.credential_type}',
-                status_code=400,
-            )
+            return jsonify({'error': 'Unsupported credential type'}), 400
 
         # Store credential in database
         credential_id = db.credentials.insert(
@@ -282,15 +268,11 @@ def create_credential():
             response_data['mtls_ca_cert'] = generated_cred.get('ca_cert_pem')
 
         logger.info(f"Created {credential_req.credential_type} credential {credential_id}")
-        return created_response(data=response_data, message='Credential created')
+        return jsonify(response_data), 201
 
     except Exception as e:
         logger.error(f"Failed to create credential: {e}")
-        return error_response(
-            error='Failed to create credential',
-            details=str(e),
-            status_code=500,
-        )
+        return jsonify({'error': 'Failed to create credential'}), 500
 
 
 @credentials_bp.route('/<int:credential_id>', methods=['GET'])
@@ -310,7 +292,7 @@ def get_credential(credential_id: int):
 
         credential_row = db(db.credentials.id == credential_id).select().first()
         if not credential_row:
-            return not_found_response('Credential')
+            return jsonify({'error': 'Credential not found'}), 404
 
         # Build response (no sensitive fields)
         response_data = {
@@ -329,15 +311,11 @@ def get_credential(credential_id: int):
             'created_at': credential_row.created_on.isoformat() if credential_row.created_on else None,
         }
 
-        return success_response(data=response_data, message='Credential retrieved')
+        return jsonify(response_data), 200
 
     except Exception as e:
         logger.error(f"Failed to get credential {credential_id}: {e}")
-        return error_response(
-            error='Failed to get credential',
-            details=str(e),
-            status_code=500,
-        )
+        return jsonify({'error': 'Failed to get credential'}), 500
 
 
 @credentials_bp.route('/<int:credential_id>', methods=['DELETE'])
@@ -357,7 +335,7 @@ def delete_credential(credential_id: int):
 
         credential_row = db(db.credentials.id == credential_id).select().first()
         if not credential_row:
-            return not_found_response('Credential')
+            return jsonify({'error': 'Credential not found'}), 404
 
         # Revoke based on type
         try:
@@ -380,15 +358,11 @@ def delete_credential(credential_id: int):
         db.commit()
 
         logger.info(f"Revoked credential {credential_id}")
-        return success_response(message='Credential revoked')
+        return jsonify({'message': 'Credential revoked'}), 200
 
     except Exception as e:
         logger.error(f"Failed to revoke credential {credential_id}: {e}")
-        return error_response(
-            error='Failed to revoke credential',
-            details=str(e),
-            status_code=500,
-        )
+        return jsonify({'error': 'Failed to revoke credential'}), 500
 
 
 @credentials_bp.route('/<int:credential_id>/rotate', methods=['POST'])
@@ -413,17 +387,13 @@ def rotate_credential(credential_id: int):
         try:
             rotate_req = CredentialRotateRequest(**data)
         except ValidationError as ve:
-            return error_response(
-                error='Validation failed',
-                details=ve.errors(),
-                status_code=400,
-            )
+            return jsonify({'error': 'Validation failed'}), 400
 
         db = pydal_manager.db
 
         credential_row = db(db.credentials.id == credential_id).select().first()
         if not credential_row:
-            return not_found_response('Credential')
+            return jsonify({'error': 'Credential not found'}), 404
 
         # Check if rotation is due
         if not rotate_req.force and credential_row.next_rotation_at:
@@ -439,10 +409,7 @@ def rotate_credential(credential_id: int):
         # Fetch resource
         resource_row = db(db.resources.id == credential_row.resource_id).select().first()
         if not resource_row:
-            return error_response(
-                error='Associated resource not found',
-                status_code=500,
-            )
+            return jsonify({'error': 'Associated resource not found'}), 500
 
         resource_dict = {
             'id': resource_row.id,
@@ -475,10 +442,7 @@ def rotate_credential(credential_id: int):
                 resource=resource_dict,
             )
         else:
-            return error_response(
-                error=f'Unsupported credential type: {credential_row.credential_type}',
-                status_code=400,
-            )
+            return jsonify({'error': 'Unsupported credential type'}), 400
 
         # Update database
         now = datetime.utcnow()
@@ -524,15 +488,11 @@ def rotate_credential(credential_id: int):
             response_data['mtls_key'] = rotated_cred.get('key_pem_encrypted')
 
         logger.info(f"Rotated credential {credential_id}")
-        return success_response(data=response_data, message='Credential rotated')
+        return jsonify(response_data), 200
 
     except Exception as e:
         logger.error(f"Failed to rotate credential {credential_id}: {e}")
-        return error_response(
-            error='Failed to rotate credential',
-            details=str(e),
-            status_code=500,
-        )
+        return jsonify({'error': 'Failed to rotate credential'}), 500
 
 
 @credentials_bp.route('/<int:credential_id>/auto-rotate', methods=['PUT'])
@@ -558,17 +518,13 @@ def configure_auto_rotate(credential_id: int):
         try:
             auto_rotate_req = AutoRotateConfigRequest(**data)
         except ValidationError as ve:
-            return error_response(
-                error='Validation failed',
-                details=ve.errors(),
-                status_code=400,
-            )
+            return jsonify({'error': 'Validation failed'}), 400
 
         db = pydal_manager.db
 
         credential_row = db(db.credentials.id == credential_id).select().first()
         if not credential_row:
-            return not_found_response('Credential')
+            return jsonify({'error': 'Credential not found'}), 404
 
         # Update configuration
         now = datetime.utcnow()
@@ -593,15 +549,8 @@ def configure_auto_rotate(credential_id: int):
         }
 
         logger.info(f"Updated auto-rotation config for credential {credential_id}")
-        return success_response(
-            data=response_data,
-            message='Auto-rotation configuration updated',
-        )
+        return jsonify(response_data), 200
 
     except Exception as e:
         logger.error(f"Failed to configure auto-rotation for {credential_id}: {e}")
-        return error_response(
-            error='Failed to configure auto-rotation',
-            details=str(e),
-            status_code=500,
-        )
+        return jsonify({'error': 'Failed to configure auto-rotation'}), 500

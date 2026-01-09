@@ -10,11 +10,7 @@ from typing import Any, Dict, Tuple
 from flask import Blueprint, request, current_app
 from flask_security import login_required
 
-from manager.app.utils.api_responses import (
-    success_response,
-    error_response,
-)
-from manager.app.api.errors import ValidationError
+from app.api.errors import ValidationError
 
 logger = logging.getLogger(__name__)
 
@@ -56,10 +52,7 @@ def get_license() -> Tuple[Dict[str, Any], int]:
         license_service = current_app.config.get('license_service')
         if not license_service:
             logger.error("License service not available")
-            return error_response(
-                error="License service unavailable",
-                status_code=500
-            )
+            return jsonify({'error': 'License service unavailable'}), 500
 
         # Get current license information
         import asyncio
@@ -71,19 +64,11 @@ def get_license() -> Tuple[Dict[str, Any], int]:
             if len(key) > 4:
                 license_info["license_key"] = f"{'*' * (len(key) - 4)}{key[-4:]}"
 
-        return success_response(
-            data=license_info,
-            message="License information retrieved successfully",
-            status_code=200
-        )
+        return jsonify(license_info), 200
 
     except Exception as e:
         logger.error(f"Error retrieving license information: {str(e)}")
-        return error_response(
-            error="Failed to retrieve license information",
-            details={"message": str(e)},
-            status_code=500
-        )
+        return jsonify({'error': 'Failed to retrieve license information'}), 500
 
 
 @license_bp.route('', methods=['POST'])
@@ -127,10 +112,7 @@ def activate_license() -> Tuple[Dict[str, Any], int]:
         license_service = current_app.config.get('license_service')
         if not license_service:
             logger.error("License service not available")
-            return error_response(
-                error="License service unavailable",
-                status_code=500
-            )
+            return jsonify({'error': 'License service unavailable'}), 500
 
         # Activate license
         import asyncio
@@ -144,32 +126,16 @@ def activate_license() -> Tuple[Dict[str, Any], int]:
 
         logger.info(f"License activated for tier: {license_info.get('tier')}")
 
-        return success_response(
-            data=license_info,
-            message=f"License activated successfully (tier: {license_info.get('tier')})",
-            status_code=200
-        )
+        return jsonify(license_info), 200
 
     except ValidationError as e:
-        return error_response(
-            error=e.message,
-            details=e.details,
-            status_code=422
-        )
+        return jsonify({'error': 'Validation error'}), 422
     except ValueError as e:
         logger.warning(f"License activation failed: {str(e)}")
-        return error_response(
-            error="License activation failed",
-            details={"message": str(e)},
-            status_code=400
-        )
+        return jsonify({'error': 'License activation failed'}), 400
     except Exception as e:
         logger.error(f"Error activating license: {str(e)}")
-        return error_response(
-            error="Failed to activate license",
-            details={"message": str(e)},
-            status_code=500
-        )
+        return jsonify({'error': 'Failed to activate license'}), 500
 
 
 @license_bp.route('', methods=['DELETE'])
@@ -195,10 +161,7 @@ def deactivate_license() -> Tuple[Dict[str, Any], int]:
         license_service = current_app.config.get('license_service')
         if not license_service:
             logger.error("License service not available")
-            return error_response(
-                error="License service unavailable",
-                status_code=500
-            )
+            return jsonify({'error': 'License service unavailable'}), 500
 
         # Deactivate license
         import asyncio
@@ -206,30 +169,15 @@ def deactivate_license() -> Tuple[Dict[str, Any], int]:
 
         if not deactivated:
             logger.info("No active license to deactivate")
-            return error_response(
-                error="No active license to deactivate",
-                status_code=404
-            )
+            return jsonify({'error': 'No active license to deactivate'}), 404
 
         logger.info("License deactivated successfully")
 
-        return success_response(
-            data={
-                "tier": "free",
-                "is_active": False,
-                "message": "Reverted to free tier with default resource limits"
-            },
-            message="License deactivated successfully",
-            status_code=200
-        )
+        return jsonify({"tier": "free", "is_active": False, "message": "Reverted to free tier with default resource limits"}), 200
 
     except Exception as e:
         logger.error(f"Error deactivating license: {str(e)}")
-        return error_response(
-            error="Failed to deactivate license",
-            details={"message": str(e)},
-            status_code=500
-        )
+        return jsonify({'error': 'Failed to deactivate license'}), 500
 
 
 @license_bp.route('/usage', methods=['GET'])
@@ -262,10 +210,7 @@ def get_usage_stats() -> Tuple[Dict[str, Any], int]:
         license_service = current_app.config.get('license_service')
         if not license_service:
             logger.error("License service not available")
-            return error_response(
-                error="License service unavailable",
-                status_code=500
-            )
+            return jsonify({'error': 'License service unavailable'}), 500
 
         # Get usage statistics
         import asyncio
@@ -284,16 +229,8 @@ def get_usage_stats() -> Tuple[Dict[str, Any], int]:
             # Unlimited tier
             usage_stats['usage_percentage'] = 0
 
-        return success_response(
-            data=usage_stats,
-            message="Usage statistics retrieved successfully",
-            status_code=200
-        )
+        return jsonify(usage_stats), 200
 
     except Exception as e:
         logger.error(f"Error retrieving usage statistics: {str(e)}")
-        return error_response(
-            error="Failed to retrieve usage statistics",
-            details={"message": str(e)},
-            status_code=500
-        )
+        return jsonify({'error': 'Failed to retrieve usage statistics'}), 500

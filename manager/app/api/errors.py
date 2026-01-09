@@ -1,8 +1,8 @@
 """ArticDBM REST API error handlers and custom exceptions."""
 
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Tuple
 from flask import Flask, jsonify
-from manager.app.utils.api_responses import error_response
+import json
 
 
 class ValidationError(Exception):
@@ -75,7 +75,7 @@ class LicenseLimitError(Exception):
         super().__init__(message)
 
 
-def handle_validation_error(error: ValidationError) -> tuple[Dict[str, Any], int]:
+def handle_validation_error(error: ValidationError) -> Tuple[Dict[str, Any], int]:
     """
     Handle ValidationError exceptions.
 
@@ -98,7 +98,7 @@ def handle_validation_error(error: ValidationError) -> tuple[Dict[str, Any], int
     return response, 422
 
 
-def handle_not_found_error(error: NotFoundError) -> tuple[Dict[str, Any], int]:
+def handle_not_found_error(error: NotFoundError) -> Tuple[Dict[str, Any], int]:
     """
     Handle NotFoundError exceptions.
 
@@ -108,13 +108,13 @@ def handle_not_found_error(error: NotFoundError) -> tuple[Dict[str, Any], int]:
     Returns:
         Tuple of (response_dict, 404).
     """
-    return error_response(
-        error=str(error),
-        status_code=404,
-    )
+    return jsonify({
+        'error': str(error),
+        'status_code': 404,
+    }), 404
 
 
-def handle_forbidden_error(error: ForbiddenError) -> tuple[Dict[str, Any], int]:
+def handle_forbidden_error(error: ForbiddenError) -> Tuple[Dict[str, Any], int]:
     """
     Handle ForbiddenError exceptions.
 
@@ -124,13 +124,10 @@ def handle_forbidden_error(error: ForbiddenError) -> tuple[Dict[str, Any], int]:
     Returns:
         Tuple of (response_dict, 403).
     """
-    return error_response(
-        error=error.message,
-        status_code=403,
-    )
+    return jsonify({'error': error.message, 'status_code': 403}), 403
 
 
-def handle_license_limit_error(error: LicenseLimitError) -> tuple[Dict[str, Any], int]:
+def handle_license_limit_error(error: LicenseLimitError) -> Tuple[Dict[str, Any], int]:
     """
     Handle LicenseLimitError exceptions.
 
@@ -150,14 +147,10 @@ def handle_license_limit_error(error: LicenseLimitError) -> tuple[Dict[str, Any]
     if error.current is not None:
         details["current"] = error.current
 
-    return error_response(
-        error=str(error),
-        details=details,
-        status_code=403,
-    )
+    return jsonify({'error': str(error), 'details': details, 'status_code': 403}), 403
 
 
-def handle_400_error(error: Exception) -> tuple[Dict[str, Any], int]:
+def handle_400_error(error: Exception) -> Tuple[Dict[str, Any], int]:
     """
     Handle 400 Bad Request errors.
 
@@ -167,14 +160,10 @@ def handle_400_error(error: Exception) -> tuple[Dict[str, Any], int]:
     Returns:
         Tuple of (response_dict, 400).
     """
-    return error_response(
-        error="Bad request",
-        details={"message": str(error)},
-        status_code=400,
-    )
+    return jsonify({'error': 'Bad request', 'details': {'message': str(error)}, 'status_code': 400}), 400
 
 
-def handle_401_error(error: Exception) -> tuple[Dict[str, Any], int]:
+def handle_401_error(error: Exception) -> Tuple[Dict[str, Any], int]:
     """
     Handle 401 Unauthorized errors.
 
@@ -184,14 +173,10 @@ def handle_401_error(error: Exception) -> tuple[Dict[str, Any], int]:
     Returns:
         Tuple of (response_dict, 401).
     """
-    return error_response(
-        error="Unauthorized",
-        details={"message": "Authentication required"},
-        status_code=401,
-    )
+    return jsonify({'error': 'Unauthorized', 'details': {'message': 'Authentication required'}, 'status_code': 401}), 401
 
 
-def handle_403_error(error: Exception) -> tuple[Dict[str, Any], int]:
+def handle_403_error(error: Exception) -> Tuple[Dict[str, Any], int]:
     """
     Handle 403 Forbidden errors.
 
@@ -201,14 +186,10 @@ def handle_403_error(error: Exception) -> tuple[Dict[str, Any], int]:
     Returns:
         Tuple of (response_dict, 403).
     """
-    return error_response(
-        error="Forbidden",
-        details={"message": "Access denied"},
-        status_code=403,
-    )
+    return jsonify({'error': 'Forbidden', 'details': {'message': 'Access denied'}, 'status_code': 403}), 403
 
 
-def handle_404_error(error: Exception) -> tuple[Dict[str, Any], int]:
+def handle_404_error(error: Exception) -> Tuple[Dict[str, Any], int]:
     """
     Handle 404 Not Found errors.
 
@@ -218,14 +199,10 @@ def handle_404_error(error: Exception) -> tuple[Dict[str, Any], int]:
     Returns:
         Tuple of (response_dict, 404).
     """
-    return error_response(
-        error="Not found",
-        details={"message": "The requested resource was not found"},
-        status_code=404,
-    )
+    return jsonify({'error': 'Not found', 'details': {'message': 'The requested resource was not found'}, 'status_code': 404}), 404
 
 
-def handle_422_error(error: Exception) -> tuple[Dict[str, Any], int]:
+def handle_422_error(error: Exception) -> Tuple[Dict[str, Any], int]:
     """
     Handle 422 Unprocessable Entity errors.
 
@@ -235,14 +212,10 @@ def handle_422_error(error: Exception) -> tuple[Dict[str, Any], int]:
     Returns:
         Tuple of (response_dict, 422).
     """
-    return error_response(
-        error="Unprocessable entity",
-        details={"message": str(error)},
-        status_code=422,
-    )
+    return jsonify({'error': 'Unprocessable entity', 'details': {'message': str(error)}, 'status_code': 422}), 422
 
 
-def handle_500_error(error: Exception) -> tuple[Dict[str, Any], int]:
+def handle_500_error(error: Exception) -> Tuple[Dict[str, Any], int]:
     """
     Handle 500 Internal Server Error.
 
@@ -252,11 +225,7 @@ def handle_500_error(error: Exception) -> tuple[Dict[str, Any], int]:
     Returns:
         Tuple of (response_dict, 500).
     """
-    return error_response(
-        error="Internal server error",
-        details={"message": "An unexpected error occurred"},
-        status_code=500,
-    )
+    return jsonify({'error': 'Internal server error', 'details': {'message': 'An unexpected error occurred'}, 'status_code': 500}), 500
 
 
 def register_error_handlers(app: Flask) -> None:
