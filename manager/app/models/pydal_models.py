@@ -7,6 +7,7 @@ relationships, and timestamp tracking.
 
 from datetime import datetime
 from pydal import DAL, Field
+from pydal.validators import IS_IN_SET
 
 
 def define_models(db: DAL) -> None:
@@ -19,35 +20,21 @@ def define_models(db: DAL) -> None:
 
     # ========================
     # Authentication & Users
+    # Note: auth_user, auth_role, auth_user_role, auth_api_key,
+    # auth_temp_token, auth_user_session are defined in users.py
+    # ========================
+
+    # ========================
+    # Organizations (must come before Applications)
     # ========================
 
     db.define_table(
-        'auth_user',
-        Field('first_name', 'string', default=''),
-        Field('last_name', 'string', default=''),
-        Field('email', 'string', unique=True, required=True),
-        Field('username', 'string', unique=True, required=True),
-        Field('password', 'password', required=True),
-        Field('last_login', 'datetime'),
+        'organizations',
+        Field('name', 'string', required=True, unique=True),
+        Field('description', 'text'),
         Field('is_active', 'boolean', default=True),
-        Field('fs_enabled', 'boolean', default=True),  # Flask-Security enabled
-        Field('confirmed_at', 'datetime'),
         Field('created_on', 'datetime', default=datetime.utcnow, writable=False),
         Field('modified_on', 'datetime', update=datetime.utcnow, writable=False),
-        format='%(email)s',
-    )
-
-    db.define_table(
-        'auth_role',
-        Field('name', 'string', unique=True, required=True),
-        Field('description', 'text'),
-        Field('created_on', 'datetime', default=datetime.utcnow, writable=False),
-    )
-
-    db.define_table(
-        'auth_user_role',
-        Field('user_id', 'reference auth_user', required=True),
-        Field('role_id', 'reference auth_role', required=True),
     )
 
     # ========================
@@ -76,15 +63,6 @@ def define_models(db: DAL) -> None:
         format='%(name)s',
     )
 
-    db.define_table(
-        'organizations',
-        Field('name', 'string', required=True, unique=True),
-        Field('description', 'text'),
-        Field('is_active', 'boolean', default=True),
-        Field('created_on', 'datetime', default=datetime.utcnow, writable=False),
-        Field('modified_on', 'datetime', update=datetime.utcnow, writable=False),
-    )
-
     # ========================
     # Providers
     # ========================
@@ -105,6 +83,32 @@ def define_models(db: DAL) -> None:
               requires=IS_IN_SET(['healthy', 'degraded', 'unhealthy', 'unknown'])),
         Field('last_health_check', 'datetime'),
         Field('created_by', 'reference auth_user'),
+        Field('created_on', 'datetime', default=datetime.utcnow, writable=False),
+        Field('modified_on', 'datetime', update=datetime.utcnow, writable=False),
+        format='%(name)s',
+    )
+
+    # ========================
+    # Resource Clusters (must come before Resources)
+    # ========================
+
+    db.define_table(
+        'resource_clusters',
+        Field('name', 'string', required=True),
+        Field('cluster_type', 'string', required=True,
+              requires=IS_IN_SET(['kubernetes', 'aws_rds', 'gcp_cloudsql',
+                                 'azure_sql', 'vultr_db', 'redis_cluster']),
+              comment='Type of cluster'),
+        Field('engine', 'string', required=True,
+              comment='Primary engine: postgresql, mysql, redis, etc'),
+        Field('provider_id', 'reference providers', required=True),
+        Field('application_id', 'reference applications', required=True),
+        Field('deployment_model', 'string',
+              requires=IS_IN_SET(['shared', 'separate']),
+              comment='Resource deployment model'),
+        Field('status', 'string', default='unknown',
+              requires=IS_IN_SET(['creating', 'available', 'modifying', 'deleting', 'failed'])),
+        Field('tags', 'json', default='{}'),
         Field('created_on', 'datetime', default=datetime.utcnow, writable=False),
         Field('modified_on', 'datetime', update=datetime.utcnow, writable=False),
         format='%(name)s',
@@ -161,28 +165,6 @@ def define_models(db: DAL) -> None:
         Field('elder_entity_id', 'string',
               comment='Elder entity ID for sync'),
         Field('created_by', 'reference auth_user'),
-        Field('created_on', 'datetime', default=datetime.utcnow, writable=False),
-        Field('modified_on', 'datetime', update=datetime.utcnow, writable=False),
-        format='%(name)s',
-    )
-
-    db.define_table(
-        'resource_clusters',
-        Field('name', 'string', required=True),
-        Field('cluster_type', 'string', required=True,
-              requires=IS_IN_SET(['kubernetes', 'aws_rds', 'gcp_cloudsql',
-                                 'azure_sql', 'vultr_db', 'redis_cluster']),
-              comment='Type of cluster'),
-        Field('engine', 'string', required=True,
-              comment='Primary engine: postgresql, mysql, redis, etc'),
-        Field('provider_id', 'reference providers', required=True),
-        Field('application_id', 'reference applications', required=True),
-        Field('deployment_model', 'string',
-              requires=IS_IN_SET(['shared', 'separate']),
-              comment='Resource deployment model'),
-        Field('status', 'string', default='unknown',
-              requires=IS_IN_SET(['creating', 'available', 'modifying', 'deleting', 'failed'])),
-        Field('tags', 'json', default='{}'),
         Field('created_on', 'datetime', default=datetime.utcnow, writable=False),
         Field('modified_on', 'datetime', update=datetime.utcnow, writable=False),
         format='%(name)s',
@@ -370,7 +352,6 @@ def define_models(db: DAL) -> None:
         Field('error_message', 'text',
               comment='Error message if failed'),
         Field('created_on', 'datetime', default=datetime.utcnow, writable=False),
-        indexes=[['user_id', 'created_on'], ['action', 'created_on']],
     )
 
     db.commit()

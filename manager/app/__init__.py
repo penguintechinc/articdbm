@@ -5,7 +5,42 @@ at module level for gunicorn to load via 'app:app'.
 """
 
 import os
+import logging
 from flask import Flask, jsonify
+from pydal import DAL
+
+from app.config import get_config
+from app.extensions import (
+    security,
+    login_manager,
+    cors,
+    redis_client,
+    scheduler,
+)
+
+
+def _init_pydal_db(app: Flask) -> DAL:
+    """
+    Initialize PyDAL database connection.
+
+    Args:
+        app: Flask application instance
+
+    Returns:
+        PyDAL database instance
+    """
+    from app.models.pydal_models import define_models
+    from app.models.users import define_user_models
+
+    # Use fake_migrate=True to skip actual migration execution
+    # Tables are already created, just verify schema
+    db = DAL(app.config['PYDAL_URI'], migrate=True, fake_migrate=True)
+    # Define user models first since other models may reference them
+    define_user_models(db)
+    # Then define other models
+    define_models(db)
+
+    return db
 
 
 def create_app(config_name='development'):
@@ -20,18 +55,56 @@ def create_app(config_name='development'):
     """
     app = Flask(__name__)
 
-    # Load configuration
+    # Load configuration using get_config utility
     try:
-        if config_name == 'production':
-            app.config.from_object('manager.config.ProductionConfig')
-        elif config_name == 'testing':
-            app.config.from_object('manager.config.TestingConfig')
-        else:
-            app.config.from_object('manager.config.DevelopmentConfig')
-    except Exception:
+        config_class = get_config(config_name)
+        app.config.from_object(config_class)
+    except Exception as e:
+        logging.warning(f"Could not load config '{config_name}': {e}")
         # Fallback configuration if config module not found
         app.config['DEBUG'] = config_name != 'production'
         app.config['TESTING'] = config_name == 'testing'
+        app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'dev-key-change-in-production')
+
+    # Initialize extensions
+    try:
+        # Initialize PyDAL database
+        db = _init_pydal_db(app)
+
+        # Store db in extensions module for access
+        import app.extensions as ext
+        ext.db = type('obj', (object,), {'db': db})()
+
+        # Initialize Flask-CORS
+        cors.init_app(app, resources={
+            r"/api/*": {
+                "origins": "*",
+                "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+                "allow_headers": ["Content-Type", "Authorization", "X-API-Key"],
+            }
+        })
+
+        # Initialize Redis client
+        try:
+            redis_client.from_url(app.config['REDIS_URL'])
+        except Exception as e:
+            logging.warning(f"Redis initialization failed: {e}")
+
+        # Initialize Flask-Login
+        login_manager.init_app(app)
+        login_manager.login_view = 'auth.login'
+
+    except Exception as e:
+        logging.error(f"Failed to initialize extensions: {e}")
+        raise
+
+    # Register authentication blueprint
+    try:
+        from app.auth import auth_bp
+        app.register_blueprint(auth_bp)
+    except Exception as e:
+        logging.error(f"Could not register auth blueprint: {e}")
+        raise
 
     # Register blueprints from api/v1
     # TODO: Fix module import paths for API blueprints

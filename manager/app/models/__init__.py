@@ -1,6 +1,6 @@
 """ArticDBM Models Package"""
 
-from manager.app.models.enums import (
+from app.models.enums import (
     CredentialType,
     DeploymentModel,
     EngineType,

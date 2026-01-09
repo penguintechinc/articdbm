@@ -22,6 +22,9 @@ aioredis==2.0.1
 aiohttp==3.9.1
 httpx==0.25.2
 
+# Scheduling
+APScheduler==3.10.4
+
 # Cloud Providers
 boto3>=1.26.0
 google-cloud-storage>=2.10.0

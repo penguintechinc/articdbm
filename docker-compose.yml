@@ -50,8 +50,14 @@ services:
       DATABASE_URL: postgresql://articdbm:${POSTGRES_PASSWORD:-articdbm}@postgres:5432/articdbm
       REDIS_URL: redis://redis:6379/0
       SECRET_KEY: ${SECRET_KEY:-dev-secret-key-change-in-production}
-      FLASK_ENV: ${FLASK_ENV:-production}
+      FLASK_ENV: ${FLASK_ENV:-development}
       DEBUG: ${DEBUG:-false}
+      DB_TYPE: postgres
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: articdbm
+      DB_USER: articdbm
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-articdbm}
       GRPC_PORT: 50051
       REST_PORT: 8000
     ports:
