@@ -30,7 +30,7 @@ spec:
       containers:
       - name: webui
         image: articdbm-webui:latest
-        imagePullPolicy: Never
+        imagePullPolicy: IfNotPresent
         ports:
         - name: http
           containerPort: 3000

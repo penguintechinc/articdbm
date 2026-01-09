@@ -1,0 +1,17 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: articdbm
+
+resources:
+  - namespace.yaml
+  - postgres-secret.yaml
+  - postgres-service.yaml
+  - postgres-statefulset.yaml
+  - redis-service.yaml
+  - redis-deployment.yaml
+  - manager-configmap.yaml
+  - manager-service.yaml
+  - manager-deployment.yaml
+  - webui-service.yaml
+  - webui-deployment.yaml

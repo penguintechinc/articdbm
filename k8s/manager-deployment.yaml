@@ -34,7 +34,7 @@ spec:
       containers:
       - name: manager
         image: articdbm-manager:latest
-        imagePullPolicy: Never
+        imagePullPolicy: IfNotPresent
         ports:
         - name: http
           containerPort: 8000
