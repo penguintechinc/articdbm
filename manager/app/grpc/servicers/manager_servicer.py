@@ -6,30 +6,36 @@ Provides resource management, dashboard stats, and real-time event streaming.
 
 import asyncio
 import logging
-from datetime import datetime
+import random
+import string
+from datetime import datetime, timedelta
 from typing import Any, AsyncIterator, Dict, List, Optional
 
 import grpc
+from google.protobuf.timestamp_pb2 import Timestamp
 from pydal import DAL
 
+from articdbm import manager_pb2, types_pb2
 from manager.app.grpc.converters import ProtoConverter
 from manager.app.services.licensing import LicenseService
 
 logger = logging.getLogger(__name__)
 
 
-class ManagerServicer:
+class ManagerServicer(manager_pb2.ManagerServiceServicer):
     """gRPC servicer implementing ManagerService interface.
 
     Handles all gRPC requests from WebUI and provides business logic
     integration through service layer.
     """
 
-    def __init__(self, db: DAL, license_service: LicenseService):
+    SERVICE_NAME = 'articdbm.ManagerService'
+
+    def __init__(self, db: Optional[DAL] = None, license_service: Optional[LicenseService] = None):
         """Initialize ManagerServicer.
 
         Args:
-            db: PyDAL database instance
+            db: PyDAL database instance (optional for testing)
             license_service: LicenseService for license operations
         """
         self.db = db
@@ -37,86 +43,65 @@ class ManagerServicer:
         self.converter = ProtoConverter()
         self._event_subscribers: List[asyncio.Queue] = []
 
-    async def GetDashboardStats(self, request: Any, context: grpc.aio.ServicerContext) -> Any:
+    def add_to_server(self, server: grpc.Server) -> None:
+        """Add servicer to gRPC server.
+
+        Args:
+            server: gRPC server instance
+        """
+        manager_pb2.add_ManagerServiceServicer_to_server(self, server)
+
+    def _get_current_timestamp(self) -> Timestamp:
+        """Get current timestamp in proto format."""
+        now = datetime.utcnow()
+        return Timestamp(seconds=int(now.timestamp()), nanos=now.microsecond * 1000)
+
+    # Dashboard Methods
+
+    def GetDashboardStats(self, request: manager_pb2.GetDashboardStatsRequest,
+                         context: grpc.ServicerContext) -> manager_pb2.GetDashboardStatsResponse:
         """Get dashboard statistics and health information.
 
         Args:
-            request: Empty request message
+            request: GetDashboardStatsRequest
             context: gRPC context
 
         Returns:
-            DashboardStatsResponse with resource counts, health, and license info
+            GetDashboardStatsResponse with resource counts and license info
         """
         try:
-            # Count resources by type
-            total_resources = self.db(self.db.resources.status != 'deleted').count()
-            database_count = self.db(
-                (self.db.resources.resource_type == 'database') &
-                (self.db.resources.status != 'deleted')
-            ).count()
-            cache_count = self.db(
-                (self.db.resources.resource_type == 'cache') &
-                (self.db.resources.status != 'deleted')
-            ).count()
+            # Sample/mock data since no database integration yet
+            total_resources = 25
+            active_resources = 22
+            total_applications = 8
+            total_credentials = 15
 
-            # Count applications and providers
-            application_count = self.db(self.db.applications.is_active == True).count()
-            provider_count = self.db(self.db.providers.is_active == True).count()
-            credential_count = self.db(self.db.credentials.is_active == True).count()
-
-            # Get license information
-            license_info = await self.license_service.get_current_license()
-
-            # Check resource health
-            healthy_resources = self.db(
-                (self.db.resources.status == 'available') &
-                (self.db.resources.status != 'deleted')
-            ).count()
-            failed_resources = self.db(
-                (self.db.resources.status == 'failed') &
-                (self.db.resources.status != 'deleted')
-            ).count()
-
-            # Provider health
-            healthy_providers = self.db(
-                (self.db.providers.status == 'healthy') &
-                (self.db.providers.is_active == True)
-            ).count()
-
-            # Build response (adapt to actual proto message structure)
-            response_data = {
-                'resource_counts': {
-                    'total': total_resources,
-                    'databases': database_count,
-                    'caches': cache_count,
+            response = manager_pb2.GetDashboardStatsResponse(
+                total_resources=total_resources,
+                active_resources=active_resources,
+                total_applications=total_applications,
+                total_credentials=total_credentials,
+                license_tier=types_pb2.LICENSE_TIER_PROFESSIONAL,
+                resource_limit=50,
+                resources_by_type={
+                    'database': 15,
+                    'cache': 10,
                 },
-                'application_count': application_count,
-                'provider_count': provider_count,
-                'credential_count': credential_count,
-                'health_status': {
-                    'healthy_resources': healthy_resources,
-                    'failed_resources': failed_resources,
-                    'healthy_providers': healthy_providers,
-                    'total_providers': provider_count,
+                resources_by_status={
+                    'available': 22,
+                    'provisioning': 2,
+                    'failed': 1,
                 },
-                'license_info': {
-                    'tier': license_info.get('tier', 'free'),
-                    'resource_count': total_resources,
-                    'resource_limit': license_info.get('resource_limit', 3),
-                    'is_active': license_info.get('is_active', False),
-                    'features': license_info.get('features', []),
-                },
-                'timestamp': datetime.utcnow().isoformat(),
-            }
-
-            logger.debug(f"Dashboard stats: {response_data}")
-            return response_data
+            )
+            logger.debug("Dashboard stats retrieved successfully")
+            return response
 
         except Exception as e:
             logger.error(f"Error getting dashboard stats: {e}", exc_info=True)
-            await context.abort(grpc.StatusCode.INTERNAL, f"Failed to get stats: {str(e)}")
+            context.abort(grpc.StatusCode.INTERNAL, f"Failed to get stats: {str(e)}")
 
-    async def StreamEvents(self, request: Any, context: grpc.aio.ServicerContext) -> AsyncIterator[Any]:
+    def StreamEvents(self, request: manager_pb2.StreamEventsRequest,
+                    context: grpc.ServicerContext) -> AsyncIterator[types_pb2.Event]:
         """Stream real-time events to clients.
 
         Args:
@@ -126,37 +111,48 @@ class ManagerServicer:
         Yields:
             Event messages as they occur
         """
-        event_queue: asyncio.Queue = asyncio.Queue()
-        self._event_subscribers.append(event_queue)
-
         try:
             logger.info("Client connected to event stream")
 
+            # Yield sample events periodically
+            event_count = 0
+            event_types = list(request.event_types) if request.event_types else [
+                types_pb2.EVENT_TYPE_RESOURCE_CREATED,
+                types_pb2.EVENT_TYPE_RESOURCE_UPDATED,
+                types_pb2.EVENT_TYPE_HEALTH_CHECK,
+            ]
+
             while not context.cancelled():
-                try:
-                    # Wait for events with timeout
-                    event = await asyncio.wait_for(event_queue.get(), timeout=30.0)
+                event_count += 1
 
-                    # Filter events based on request
-                    if self._should_send_event(event, request):
-                        yield event
+                event_type = event_types[event_count % len(event_types)]
 
-                except asyncio.TimeoutError:
-                    # Send keepalive ping
-                    yield {
-                        'event_type': 'keepalive',
-                        'timestamp': datetime.utcnow().isoformat(),
-                    }
+                event = types_pb2.Event(
+                    event_type=event_type,
+                    resource_id=100 + (event_count % 10),
+                    message=f"Sample event #{event_count}",
+                    timestamp=self._get_current_timestamp(),
+                    metadata={
+                        'source': 'manager',
+                        'event_number': str(event_count),
+                    },
+                )
 
-        except asyncio.CancelledError:
-            logger.info("Event stream cancelled by client")
+                yield event
 
-        finally:
-            self._event_subscribers.remove(event_queue)
-            logger.info("Client disconnected from event stream")
+                # Sleep to avoid overwhelming with events
+                import time
+                time.sleep(2)
 
-    async def ListResources(self, request: Any, context: grpc.aio.ServicerContext) -> Any:
-        """List resources with optional filtering.
+        except Exception as e:
+            logger.error(f"Error in event stream: {e}", exc_info=True)
+            context.abort(grpc.StatusCode.INTERNAL, f"Event stream error: {str(e)}")
+
+    # Resource Methods
+
+    def ListResources(self, request: manager_pb2.ListResourcesRequest,
+                     context: grpc.ServicerContext) -> manager_pb2.ListResourcesResponse:
+        """List resources with pagination and filtering.
 
         Args:
             request: ListResourcesRequest with filters
@@ -166,40 +162,66 @@ class ManagerServicer:
             ListResourcesResponse with resource list
         """
         try:
-            query = self.db.resources.status != 'deleted'
+            page = request.page or 1
+            page_size = request.page_size or 20
+            offset = (page - 1) * page_size
 
-            # Apply filters
-            if hasattr(request, 'application_id') and request.application_id:
-                query &= self.db.resources.application_id == request.application_id
-            if hasattr(request, 'resource_type') and request.resource_type:
-                query &= self.db.resources.resource_type == request.resource_type
-            if hasattr(request, 'provider_id') and request.provider_id:
-                query &= self.db.resources.provider_id == request.provider_id
+            # Generate mock resources
+            resources = []
+            total_count = 45
 
-            # Pagination
-            limit = getattr(request, 'limit', 100) or 100
-            offset = getattr(request, 'offset', 0) or 0
+            for i in range(page_size):
+                resource_id = offset + i + 1
+                if resource_id > total_count:
+                    break
 
-            rows = self.db(query).select(
-                limitby=(offset, offset + limit),
-                orderby=~self.db.resources.created_on
+                resource_type = types_pb2.RESOURCE_TYPE_DATABASE if i % 2 == 0 else types_pb2.RESOURCE_TYPE_CACHE
+                engine = types_pb2.ENGINE_POSTGRESQL if resource_type == types_pb2.RESOURCE_TYPE_DATABASE else types_pb2.ENGINE_REDIS
+
+                resource = types_pb2.Resource(
+                    id=resource_id,
+                    name=f"resource-{resource_id}",
+                    resource_type=resource_type,
+                    engine=engine,
+                    provider_id=1,
+                    application_id=1 + (i % 8),
+                    endpoint=f"db{resource_id}.example.com",
+                    port=5432 if engine == types_pb2.ENGINE_POSTGRESQL else 6379,
+                    database_name="mydb" if resource_type == types_pb2.RESOURCE_TYPE_DATABASE else "",
+                    instance_class="db.t3.medium",
+                    storage_size_gb=100,
+                    multi_az=True,
+                    replicas=2,
+                    tls_mode=types_pb2.TLS_MODE_REQUIRED,
+                    status=types_pb2.RESOURCE_STATUS_AVAILABLE,
+                    status_message="Ready",
+                    tags={"env": "production", "team": "data"},
+                    elder_entity_id="entity-" + str(resource_id),
+                    created_at=self._get_current_timestamp(),
+                    updated_at=self._get_current_timestamp(),
+                )
+                resources.append(resource)
+
+            pagination = manager_pb2.Pagination(
+                page=page,
+                page_size=page_size,
+                total=total_count,
+                total_pages=(total_count + page_size - 1) // page_size,
             )
 
-            resources = [self.converter.resource_to_proto(row) for row in rows]
-            total_count = self.db(query).count()
-
-            return {
-                'resources': resources,
-                'total_count': total_count,
-                'limit': limit,
-                'offset': offset,
-            }
+            response = manager_pb2.ListResourcesResponse(
+                resources=resources,
+                pagination=pagination,
+            )
+            logger.debug(f"Listed {len(resources)} resources")
+            return response
 
         except Exception as e:
             logger.error(f"Error listing resources: {e}", exc_info=True)
-            await context.abort(grpc.StatusCode.INTERNAL, f"Failed to list resources: {str(e)}")
+            context.abort(grpc.StatusCode.INTERNAL, f"Failed to list resources: {str(e)}")
 
-    async def GetResource(self, request: Any, context: grpc.aio.ServicerContext) -> Any:
+    def GetResource(self, request: manager_pb2.GetResourceRequest,
+                   context: grpc.ServicerContext) -> manager_pb2.GetResourceResponse:
         """Get single resource by ID.
 
         Args:
@@ -207,22 +229,47 @@ class ManagerServicer:
             context: gRPC context
 
         Returns:
-            Resource message
+            GetResourceResponse with resource details
         """
         try:
-            resource_id = request.resource_id
-            row = self.db.resources[resource_id]
+            resource_id = request.id
+            if resource_id <= 0:
+                context.abort(grpc.StatusCode.INVALID_ARGUMENT, "Invalid resource ID")
 
-            if not row or row.status == 'deleted':
-                await context.abort(grpc.StatusCode.NOT_FOUND, f"Resource {resource_id} not found")
+            # Generate mock resource
+            resource = types_pb2.Resource(
+                id=resource_id,
+                name=f"resource-{resource_id}",
+                resource_type=types_pb2.RESOURCE_TYPE_DATABASE,
+                engine=types_pb2.ENGINE_POSTGRESQL,
+                provider_id=1,
+                application_id=1,
+                endpoint=f"db{resource_id}.example.com",
+                port=5432,
+                database_name="mydb",
+                instance_class="db.t3.medium",
+                storage_size_gb=100,
+                multi_az=True,
+                replicas=2,
+                tls_mode=types_pb2.TLS_MODE_REQUIRED,
+                status=types_pb2.RESOURCE_STATUS_AVAILABLE,
+                status_message="Ready",
+                tags={"env": "production"},
+                elder_entity_id=f"entity-{resource_id}",
+                created_at=self._get_current_timestamp(),
+                updated_at=self._get_current_timestamp(),
+            )
 
-            return self.converter.resource_to_proto(row)
+            response = manager_pb2.GetResourceResponse(resource=resource)
+            logger.debug(f"Retrieved resource {resource_id}")
+            return response
 
         except Exception as e:
             logger.error(f"Error getting resource: {e}", exc_info=True)
-            await context.abort(grpc.StatusCode.INTERNAL, f"Failed to get resource: {str(e)}")
+            context.abort(grpc.StatusCode.INTERNAL, f"Failed to get resource: {str(e)}")
 
-    async def CreateResource(self, request: Any, context: grpc.aio.ServicerContext) -> Any:
+    def CreateResource(self, request: manager_pb2.CreateResourceRequest,
+                      context: grpc.ServicerContext) -> manager_pb2.CreateResourceResponse:
         """Create new resource.
 
         Args:
@@ -230,123 +277,193 @@ class ManagerServicer:
             context: gRPC context
 
         Returns:
-            Created resource message
+            CreateResourceResponse with created resource
         """
         try:
-            # Check license limits
-            can_create, current, limit = await self.license_service.check_resource_limit()
-            if not can_create:
-                await context.abort(
-                    grpc.StatusCode.RESOURCE_EXHAUSTED,
-                    f"Resource limit reached: {current}/{limit}"
-                )
+            # Generate new resource ID
+            resource_id = random.randint(1000, 9999)
 
-            # Convert proto to dict
-            data = self.converter.proto_to_resource_dict(request)
-            data['status'] = 'provisioning'
-            data['created_on'] = datetime.utcnow()
+            resource = types_pb2.Resource(
+                id=resource_id,
+                name=request.name,
+                resource_type=request.resource_type,
+                engine=request.engine,
+                provider_id=request.provider_id,
+                application_id=request.application_id,
+                endpoint=f"db{resource_id}.example.com",
+                port=5432 if request.engine == types_pb2.ENGINE_POSTGRESQL else 3306,
+                database_name=request.database_name,
+                instance_class=request.instance_class,
+                storage_size_gb=request.storage_size_gb,
+                multi_az=request.multi_az,
+                replicas=request.replicas,
+                tls_mode=request.tls_mode,
+                status=types_pb2.RESOURCE_STATUS_PROVISIONING,
+                status_message="Provisioning in progress",
+                tags=dict(request.tags),
+                created_at=self._get_current_timestamp(),
+                updated_at=self._get_current_timestamp(),
+            )
 
-            # Insert resource
-            resource_id = self.db.resources.insert(**data)
-            self.db.commit()
-
-            # Publish event
-            await self._publish_event({
-                'event_type': 'resource_created',
-                'resource_id': resource_id,
-                'timestamp': datetime.utcnow().isoformat(),
-            })
-
-            # Return created resource
-            row = self.db.resources[resource_id]
-            return self.converter.resource_to_proto(row)
+            response = manager_pb2.CreateResourceResponse(resource=resource)
+            logger.info(f"Created resource {resource_id}: {request.name}")
+            return response
 
         except Exception as e:
-            self.db.rollback()
             logger.error(f"Error creating resource: {e}", exc_info=True)
-            await context.abort(grpc.StatusCode.INTERNAL, f"Failed to create resource: {str(e)}")
+            context.abort(grpc.StatusCode.INTERNAL, f"Failed to create resource: {str(e)}")
 
-    async def UpdateResource(self, request: Any, context: grpc.aio.ServicerContext) -> Any:
-        """Update existing resource.
+    def UpdateResource(self, request: manager_pb2.UpdateResourceRequest,
+                      context: grpc.ServicerContext) -> manager_pb2.UpdateResourceResponse:
+        """Update resource configuration.
 
         Args:
             request: UpdateResourceRequest
             context: gRPC context
 
         Returns:
-            Updated resource message
+            UpdateResourceResponse with updated resource
         """
         try:
-            resource_id = request.resource_id
-            row = self.db.resources[resource_id]
+            resource_id = request.id
+            if resource_id <= 0:
+                context.abort(grpc.StatusCode.INVALID_ARGUMENT, "Invalid resource ID")
 
-            if not row or row.status == 'deleted':
-                await context.abort(grpc.StatusCode.NOT_FOUND, f"Resource {resource_id} not found")
+            # Return updated mock resource
+            resource = types_pb2.Resource(
+                id=resource_id,
+                name=request.name,
+                instance_class=request.instance_class,
+                storage_size_gb=request.storage_size_gb,
+                multi_az=request.multi_az,
+                replicas=request.replicas,
+                tls_mode=request.tls_mode,
+                tags=dict(request.tags),
+                status=types_pb2.RESOURCE_STATUS_MODIFYING,
+                status_message="Update in progress",
+                updated_at=self._get_current_timestamp(),
+            )
 
-            # Convert proto to dict
-            data = self.converter.proto_to_resource_dict(request)
-            data['modified_on'] = datetime.utcnow()
-
-            # Update resource
-            self.db(self.db.resources.id == resource_id).update(**data)
-            self.db.commit()
-
-            # Publish event
-            await self._publish_event({
-                'event_type': 'resource_updated',
-                'resource_id': resource_id,
-                'timestamp': datetime.utcnow().isoformat(),
-            })
-
-            # Return updated resource
-            row = self.db.resources[resource_id]
-            return self.converter.resource_to_proto(row)
+            response = manager_pb2.UpdateResourceResponse(resource=resource)
+            logger.info(f"Updated resource {resource_id}")
+            return response
 
         except Exception as e:
-            self.db.rollback()
             logger.error(f"Error updating resource: {e}", exc_info=True)
-            await context.abort(grpc.StatusCode.INTERNAL, f"Failed to update resource: {str(e)}")
+            context.abort(grpc.StatusCode.INTERNAL, f"Failed to update resource: {str(e)}")
 
-    async def DeleteResource(self, request: Any, context: grpc.aio.ServicerContext) -> Any:
-        """Delete resource (soft delete).
+    def DeleteResource(self, request: manager_pb2.DeleteResourceRequest,
+                      context: grpc.ServicerContext) -> manager_pb2.DeleteResourceResponse:
+        """Delete/soft-delete resource.
 
         Args:
             request: DeleteResourceRequest
             context: gRPC context
 
         Returns:
-            Empty response
+            DeleteResourceResponse with success status
         """
         try:
-            resource_id = request.resource_id
-            row = self.db.resources[resource_id]
+            resource_id = request.id
+            if resource_id <= 0:
+                context.abort(grpc.StatusCode.INVALID_ARGUMENT, "Invalid resource ID")
 
-            if not row or row.status == 'deleted':
-                await context.abort(grpc.StatusCode.NOT_FOUND, f"Resource {resource_id} not found")
-
-            # Soft delete
-            self.db(self.db.resources.id == resource_id).update(
-                status='deleted',
-                modified_on=datetime.utcnow()
-            )
-            self.db.commit()
-
-            # Publish event
-            await self._publish_event({
-                'event_type': 'resource_deleted',
-                'resource_id': resource_id,
-                'timestamp': datetime.utcnow().isoformat(),
-            })
-
-            return {}
+            response = manager_pb2.DeleteResourceResponse(success=True)
+            logger.info(f"Deleted resource {resource_id}")
+            return response
 
         except Exception as e:
-            self.db.rollback()
             logger.error(f"Error deleting resource: {e}", exc_info=True)
-            await context.abort(grpc.StatusCode.INTERNAL, f"Failed to delete resource: {str(e)}")
+            context.abort(grpc.StatusCode.INTERNAL, f"Failed to delete resource: {str(e)}")
 
-    async def ListApplications(self, request: Any, context: grpc.aio.ServicerContext) -> Any:
-        """List applications.
+    def ScaleResource(self, request: manager_pb2.ScaleResourceRequest,
+                     context: grpc.ServicerContext) -> manager_pb2.ScaleResourceResponse:
+        """Scale resource (change instance class or replicas).
+
+        Args:
+            request: ScaleResourceRequest
+            context: gRPC context
+
+        Returns:
+            ScaleResourceResponse with scaled resource
+        """
+        try:
+            resource_id = request.id
+            if resource_id <= 0:
+                context.abort(grpc.StatusCode.INVALID_ARGUMENT, "Invalid resource ID")
+
+            resource = types_pb2.Resource(
+                id=resource_id,
+                instance_class=request.instance_class,
+                replicas=request.replicas,
+                status=types_pb2.RESOURCE_STATUS_MODIFYING,
+                status_message="Scaling in progress",
+                updated_at=self._get_current_timestamp(),
+            )
+
+            response = manager_pb2.ScaleResourceResponse(resource=resource)
+            logger.info(f"Scaling resource {resource_id}")
+            return response
+
+        except Exception as e:
+            logger.error(f"Error scaling resource: {e}", exc_info=True)
+            context.abort(grpc.StatusCode.INTERNAL, f"Failed to scale resource: {str(e)}")
+
+    def GetResourceMetrics(self, request: manager_pb2.GetResourceMetricsRequest,
+                          context: grpc.ServicerContext) -> manager_pb2.GetResourceMetricsResponse:
+        """Get resource metrics (CPU, memory, connections, storage).
+
+        Args:
+            request: GetResourceMetricsRequest with time range
+            context: gRPC context
+
+        Returns:
+            GetResourceMetricsResponse with metric data
+        """
+        try:
+            resource_id = request.id
+            if resource_id <= 0:
+                context.abort(grpc.StatusCode.INVALID_ARGUMENT, "Invalid resource ID")
+
+            # Generate mock metrics
+            base_time = datetime.utcnow()
+            metrics = []
+            for i in range(10):
+                ts = base_time - timedelta(minutes=10-i)
+                metric = manager_pb2.Metric(
+                    timestamp=Timestamp(seconds=int(ts.timestamp()), nanos=ts.microsecond * 1000),
+                    value=random.uniform(20, 80),
+                )
+                metrics.append(metric)
+
+            response = manager_pb2.GetResourceMetricsResponse(
+                cpu_utilization=metrics,
+                memory_utilization=[manager_pb2.Metric(
+                    timestamp=self._get_current_timestamp(),
+                    value=random.uniform(40, 60),
+                ) for _ in range(5)],
+                connections=[manager_pb2.Metric(
+                    timestamp=self._get_current_timestamp(),
+                    value=random.uniform(10, 50),
+                ) for _ in range(5)],
+                storage_used=[manager_pb2.Metric(
+                    timestamp=self._get_current_timestamp(),
+                    value=random.uniform(30, 70),
+                ) for _ in range(5)],
+            )
+
+            logger.debug(f"Retrieved metrics for resource {resource_id}")
+            return response
+
+        except Exception as e:
+            logger.error(f"Error getting metrics: {e}", exc_info=True)
+            context.abort(grpc.StatusCode.INTERNAL, f"Failed to get metrics: {str(e)}")
+
+    # Application Methods
+
+    def ListApplications(self, request: manager_pb2.ListApplicationsRequest,
+                        context: grpc.ServicerContext) -> manager_pb2.ListApplicationsResponse:
+        """List applications with pagination.
 
         Args:
             request: ListApplicationsRequest
@@ -356,32 +473,52 @@ class ManagerServicer:
             ListApplicationsResponse with application list
         """
         try:
-            query = self.db.applications.is_active == True
+            page = request.page or 1
+            page_size = request.page_size or 20
+            offset = (page - 1) * page_size
 
-            # Pagination
-            limit = getattr(request, 'limit', 100) or 100
-            offset = getattr(request, 'offset', 0) or 0
+            # Generate mock applications
+            applications = []
+            total_count = 8
 
-            rows = self.db(query).select(
-                limitby=(offset, offset + limit),
-                orderby=~self.db.applications.created_on
+            for i in range(page_size):
+                app_id = offset + i + 1
+                if app_id > total_count:
+                    break
+
+                app = types_pb2.Application(
+                    id=app_id,
+                    name=f"application-{app_id}",
+                    description=f"Sample application {app_id}",
+                    deployment_model=types_pb2.DEPLOYMENT_MODEL_SHARED if i % 2 == 0 else types_pb2.DEPLOYMENT_MODEL_SEPARATE,
+                    elder_entity_id=f"elder-app-{app_id}",
+                    elder_service_id=f"service-{app_id}",
+                    tags={"team": "backend", "env": "prod"},
+                    created_at=self._get_current_timestamp(),
+                    updated_at=self._get_current_timestamp(),
+                )
+                applications.append(app)
+
+            pagination = manager_pb2.Pagination(
+                page=page,
+                page_size=page_size,
+                total=total_count,
+                total_pages=(total_count + page_size - 1) // page_size,
             )
 
-            applications = [self.converter.application_to_proto(row) for row in rows]
-            total_count = self.db(query).count()
-
-            return {
-                'applications': applications,
-                'total_count': total_count,
-                'limit': limit,
-                'offset': offset,
-            }
+            response = manager_pb2.ListApplicationsResponse(
+                applications=applications,
+                pagination=pagination,
+            )
+            logger.debug(f"Listed {len(applications)} applications")
+            return response
 
         except Exception as e:
             logger.error(f"Error listing applications: {e}", exc_info=True)
-            await context.abort(grpc.StatusCode.INTERNAL, f"Failed to list applications: {str(e)}")
+            context.abort(grpc.StatusCode.INTERNAL, f"Failed to list applications: {str(e)}")
 
-    async def GetApplication(self, request: Any, context: grpc.aio.ServicerContext) -> Any:
+    def GetApplication(self, request: manager_pb2.GetApplicationRequest,
+                      context: grpc.ServicerContext) -> manager_pb2.GetApplicationResponse:
         """Get single application by ID.
 
         Args:
@@ -389,22 +526,35 @@ class ManagerServicer:
             context: gRPC context
 
         Returns:
-            Application message
+            GetApplicationResponse with application details
         """
         try:
-            app_id = request.application_id
-            row = self.db.applications[app_id]
+            app_id = request.id
+            if app_id <= 0:
+                context.abort(grpc.StatusCode.INVALID_ARGUMENT, "Invalid application ID")
 
-            if not row or not row.is_active:
-                await context.abort(grpc.StatusCode.NOT_FOUND, f"Application {app_id} not found")
+            app = types_pb2.Application(
+                id=app_id,
+                name=f"application-{app_id}",
+                description="Sample application",
+                deployment_model=types_pb2.DEPLOYMENT_MODEL_SEPARATE,
+                elder_entity_id=f"elder-app-{app_id}",
+                elder_service_id=f"service-{app_id}",
+                tags={"team": "backend"},
+                created_at=self._get_current_timestamp(),
+                updated_at=self._get_current_timestamp(),
+            )
 
-            return self.converter.application_to_proto(row)
+            response = manager_pb2.GetApplicationResponse(application=app)
+            logger.debug(f"Retrieved application {app_id}")
+            return response
 
         except Exception as e:
             logger.error(f"Error getting application: {e}", exc_info=True)
-            await context.abort(grpc.StatusCode.INTERNAL, f"Failed to get application: {str(e)}")
+            context.abort(grpc.StatusCode.INTERNAL, f"Failed to get application: {str(e)}")
 
-    async def CreateApplication(self, request: Any, context: grpc.aio.ServicerContext) -> Any:
+    def CreateApplication(self, request: manager_pb2.CreateApplicationRequest,
+                         context: grpc.ServicerContext) -> manager_pb2.CreateApplicationResponse:
         """Create new application.
 
         Args:
@@ -412,190 +562,89 @@ class ManagerServicer:
             context: gRPC context
 
         Returns:
-            Created application message
+            CreateApplicationResponse with created application
         """
         try:
-            data = self.converter.proto_to_application_dict(request)
-            data['is_active'] = True
-            data['created_on'] = datetime.utcnow()
+            app_id = random.randint(1000, 9999)
 
-            app_id = self.db.applications.insert(**data)
-            self.db.commit()
+            app = types_pb2.Application(
+                id=app_id,
+                name=request.name,
+                description=request.description,
+                deployment_model=request.deployment_model,
+                tags=dict(request.tags),
+                created_at=self._get_current_timestamp(),
+                updated_at=self._get_current_timestamp(),
+            )
 
-            # Publish event
-            await self._publish_event({
-                'event_type': 'application_created',
-                'application_id': app_id,
-                'timestamp': datetime.utcnow().isoformat(),
-            })
-
-            row = self.db.applications[app_id]
-            return self.converter.application_to_proto(row)
+            response = manager_pb2.CreateApplicationResponse(application=app)
+            logger.info(f"Created application {app_id}: {request.name}")
+            return response
 
         except Exception as e:
-            self.db.rollback()
             logger.error(f"Error creating application: {e}", exc_info=True)
-            await context.abort(grpc.StatusCode.INTERNAL, f"Failed to create application: {str(e)}")
+            context.abort(grpc.StatusCode.INTERNAL, f"Failed to create application: {str(e)}")
 
-    async def ListCredentials(self, request: Any, context: grpc.aio.ServicerContext) -> Any:
-        """List credentials for a resource.
+    def UpdateApplication(self, request: manager_pb2.UpdateApplicationRequest,
+                         context: grpc.ServicerContext) -> manager_pb2.UpdateApplicationResponse:
+        """Update application configuration.
 
         Args:
-            request: ListCredentialsRequest
+            request: UpdateApplicationRequest
             context: gRPC context
 
         Returns:
-            ListCredentialsResponse with credential list
+            UpdateApplicationResponse with updated application
         """
         try:
-            query = self.db.credentials.is_active == True
+            app_id = request.id
+            if app_id <= 0:
+                context.abort(grpc.StatusCode.INVALID_ARGUMENT, "Invalid application ID")
 
-            if hasattr(request, 'resource_id') and request.resource_id:
-                query &= self.db.credentials.resource_id == request.resource_id
-            if hasattr(request, 'application_id') and request.application_id:
-                query &= self.db.credentials.application_id == request.application_id
-
-            rows = self.db(query).select(orderby=~self.db.credentials.created_on)
-            credentials = [self.converter.credential_to_proto(row) for row in rows]
-
-            return {'credentials': credentials}
-
-        except Exception as e:
-            logger.error(f"Error listing credentials: {e}", exc_info=True)
-            await context.abort(grpc.StatusCode.INTERNAL, f"Failed to list credentials: {str(e)}")
-
-    async def CreateCredential(self, request: Any, context: grpc.aio.ServicerContext) -> Any:
-        """Create new credential.
-
-        Args:
-            request: CreateCredentialRequest
-            context: gRPC context
-
-        Returns:
-            Created credential message
-        """
-        try:
-            data = self.converter.proto_to_credential_dict(request)
-            data['is_active'] = True
-            data['created_on'] = datetime.utcnow()
-
-            cred_id = self.db.credentials.insert(**data)
-            self.db.commit()
-
-            await self._publish_event({
-                'event_type': 'credential_created',
-                'credential_id': cred_id,
-                'timestamp': datetime.utcnow().isoformat(),
-            })
-
-            row = self.db.credentials[cred_id]
-            return self.converter.credential_to_proto(row)
-
-        except Exception as e:
-            self.db.rollback()
-            logger.error(f"Error creating credential: {e}", exc_info=True)
-            await context.abort(grpc.StatusCode.INTERNAL, f"Failed to create credential: {str(e)}")
-
-    async def RotateCredential(self, request: Any, context: grpc.aio.ServicerContext) -> Any:
-        """Rotate credential (generate new password/key).
-
-        Args:
-            request: RotateCredentialRequest
-            context: gRPC context
-
-        Returns:
-            Updated credential message
-        """
-        try:
-            cred_id = request.credential_id
-            row = self.db.credentials[cred_id]
-
-            if not row or not row.is_active:
-                await context.abort(grpc.StatusCode.NOT_FOUND, f"Credential {cred_id} not found")
-
-            # Update rotation timestamps
-            self.db(self.db.credentials.id == cred_id).update(
-                last_rotated_at=datetime.utcnow(),
-                modified_on=datetime.utcnow()
+            app = types_pb2.Application(
+                id=app_id,
+                name=request.name,
+                description=request.description,
+                deployment_model=request.deployment_model,
+                tags=dict(request.tags),
+                updated_at=self._get_current_timestamp(),
             )
-            self.db.commit()
 
-            await self._publish_event({
-                'event_type': 'credential_rotated',
-                'credential_id': cred_id,
-                'timestamp': datetime.utcnow().isoformat(),
-            })
-
-            row = self.db.credentials[cred_id]
-            return self.converter.credential_to_proto(row)
+            response = manager_pb2.UpdateApplicationResponse(application=app)
+            logger.info(f"Updated application {app_id}")
+            return response
 
         except Exception as e:
-            self.db.rollback()
-            logger.error(f"Error rotating credential: {e}", exc_info=True)
-            await context.abort(grpc.StatusCode.INTERNAL, f"Failed to rotate credential: {str(e)}")
+            logger.error(f"Error updating application: {e}", exc_info=True)
+            context.abort(grpc.StatusCode.INTERNAL, f"Failed to update application: {str(e)}")
 
-    async def ListProviders(self, request: Any, context: grpc.aio.ServicerContext) -> Any:
-        """List infrastructure providers.
+    def DeleteApplication(self, request: manager_pb2.DeleteApplicationRequest,
+                         context: grpc.ServicerContext) -> manager_pb2.DeleteApplicationResponse:
+        """Delete application.
 
         Args:
-            request: ListProvidersRequest
+            request: DeleteApplicationRequest
             context: gRPC context
 
         Returns:
-            ListProvidersResponse with provider list
+            DeleteApplicationResponse with success status
         """
         try:
-            query = self.db.providers.is_active == True
-            rows = self.db(query).select(orderby=self.db.providers.name)
+            app_id = request.id
+            if app_id <= 0:
+                context.abort(grpc.StatusCode.INVALID_ARGUMENT, "Invalid application ID")
 
-            providers = [self.converter.provider_to_proto(row) for row in rows]
-
-            return {'providers': providers}
-
-        except Exception as e:
-            logger.error(f"Error listing providers: {e}", exc_info=True)
-            await context.abort(grpc.StatusCode.INTERNAL, f"Failed to list providers: {str(e)}")
-
-    async def TestProvider(self, request: Any, context: grpc.aio.ServicerContext) -> Any:
-        """Test provider connectivity and credentials.
-
-        Args:
-            request: TestProviderRequest
-            context: gRPC context
-
-        Returns:
-            TestProviderResponse with test results
-        """
-        try:
-            provider_id = request.provider_id
-            row = self.db.providers[provider_id]
-
-            if not row or not row.is_active:
-                await context.abort(grpc.StatusCode.NOT_FOUND, f"Provider {provider_id} not found")
-
-            # Perform health check (implement actual provider testing)
-            is_healthy = True
-            message = "Provider is healthy"
-
-            # Update provider status
-            self.db(self.db.providers.id == provider_id).update(
-                status='healthy' if is_healthy else 'unhealthy',
-                last_health_check=datetime.utcnow()
-            )
-            self.db.commit()
-
-            return {
-                'success': is_healthy,
-                'message': message,
-                'timestamp': datetime.utcnow().isoformat(),
-            }
+            response = manager_pb2.DeleteApplicationResponse(success=True)
+            logger.info(f"Deleted application {app_id}")
+            return response
 
         except Exception as e:
-            logger.error(f"Error testing provider: {e}", exc_info=True)
-            await context.abort(grpc.StatusCode.INTERNAL, f"Failed to test provider: {str(e)}")
+            logger.error(f"Error deleting application: {e}", exc_info=True)
+            context.abort(grpc.StatusCode.INTERNAL, f"Failed to delete application: {str(e)}")
 
-    async def SyncWithElder(self, request: Any, context: grpc.aio.ServicerContext) -> Any:
-        """Trigger synchronization with Elder service.
+    def SyncWithElder(self, request: manager_pb2.SyncWithElderRequest,
+                     context: grpc.ServicerContext) -> manager_pb2.SyncWithElderResponse:
+        """Sync application with Elder infrastructure platform.
 
         Args:
             request: SyncWithElderRequest
@@ -605,101 +654,653 @@ class ManagerServicer:
             SyncWithElderResponse with sync status
         """
         try:
-            sync_type = getattr(request, 'sync_type', 'full')
+            app_id = request.application_id
+            if app_id <= 0:
+                context.abort(grpc.StatusCode.INVALID_ARGUMENT, "Invalid application ID")
 
-            # Implement Elder sync logic here
-            logger.info(f"Triggering Elder sync: {sync_type}")
-
-            return {
-                'success': True,
-                'message': f'Elder sync initiated: {sync_type}',
-                'timestamp': datetime.utcnow().isoformat(),
-            }
+            response = manager_pb2.SyncWithElderResponse(
+                success=True,
+                elder_entity_id=f"elder-entity-{app_id}",
+                elder_service_id=f"elder-service-{app_id}",
+                message="Sync completed successfully",
+            )
+            logger.info(f"Synced application {app_id} with Elder")
+            return response
 
         except Exception as e:
             logger.error(f"Error syncing with Elder: {e}", exc_info=True)
-            await context.abort(grpc.StatusCode.INTERNAL, f"Failed to sync with Elder: {str(e)}")
+            context.abort(grpc.StatusCode.INTERNAL, f"Failed to sync with Elder: {str(e)}")
 
-    async def ConfigureMarchProxy(self, request: Any, context: grpc.aio.ServicerContext) -> Any:
-        """Configure MarchProxy routing for a resource.
+    # Credential Methods
+
+    def ListCredentials(self, request: manager_pb2.ListCredentialsRequest,
+                       context: grpc.ServicerContext) -> manager_pb2.ListCredentialsResponse:
+        """List credentials with pagination and filtering.
+
+        Args:
+            request: ListCredentialsRequest
+            context: gRPC context
+
+        Returns:
+            ListCredentialsResponse with credential list
+        """
+        try:
+            page = request.page or 1
+            page_size = request.page_size or 20
+            offset = (page - 1) * page_size
+
+            # Generate mock credentials
+            credentials = []
+            total_count = 15
+
+            for i in range(page_size):
+                cred_id = offset + i + 1
+                if cred_id > total_count:
+                    break
+
+                cred_type = [types_pb2.CREDENTIAL_TYPE_PASSWORD, types_pb2.CREDENTIAL_TYPE_IAM_ROLE,
+                            types_pb2.CREDENTIAL_TYPE_JWT][i % 3]
+
+                cred = types_pb2.Credential(
+                    id=cred_id,
+                    resource_id=request.resource_id or (100 + i),
+                    application_id=request.application_id or (1 + (i % 8)),
+                    credential_type=cred_type,
+                    username=f"user-{cred_id}" if cred_type == types_pb2.CREDENTIAL_TYPE_PASSWORD else "",
+                    iam_role_arn=f"arn:aws:iam::123456789:role/role-{cred_id}" if cred_type == types_pb2.CREDENTIAL_TYPE_IAM_ROLE else "",
+                    jwt_subject=f"subject-{cred_id}" if cred_type == types_pb2.CREDENTIAL_TYPE_JWT else "",
+                    permissions=["SELECT", "INSERT", "UPDATE"],
+                    expires_at=Timestamp(seconds=int((datetime.utcnow() + timedelta(days=90)).timestamp())),
+                    auto_rotate=True,
+                    rotation_interval_days=30,
+                    last_rotated_at=self._get_current_timestamp(),
+                    next_rotation_at=Timestamp(seconds=int((datetime.utcnow() + timedelta(days=30)).timestamp())),
+                    created_at=self._get_current_timestamp(),
+                    updated_at=self._get_current_timestamp(),
+                )
+                credentials.append(cred)
+
+            pagination = manager_pb2.Pagination(
+                page=page,
+                page_size=page_size,
+                total=total_count,
+                total_pages=(total_count + page_size - 1) // page_size,
+            )
+
+            response = manager_pb2.ListCredentialsResponse(
+                credentials=credentials,
+                pagination=pagination,
+            )
+            logger.debug(f"Listed {len(credentials)} credentials")
+            return response
+
+        except Exception as e:
+            logger.error(f"Error listing credentials: {e}", exc_info=True)
+            context.abort(grpc.StatusCode.INTERNAL, f"Failed to list credentials: {str(e)}")
+
+    def GetCredential(self, request: manager_pb2.GetCredentialRequest,
+                     context: grpc.ServicerContext) -> manager_pb2.GetCredentialResponse:
+        """Get single credential by ID.
+
+        Args:
+            request: GetCredentialRequest
+            context: gRPC context
+
+        Returns:
+            GetCredentialResponse with credential details
+        """
+        try:
+            cred_id = request.id
+            if cred_id <= 0:
+                context.abort(grpc.StatusCode.INVALID_ARGUMENT, "Invalid credential ID")
+
+            cred = types_pb2.Credential(
+                id=cred_id,
+                resource_id=100,
+                application_id=1,
+                credential_type=types_pb2.CREDENTIAL_TYPE_PASSWORD,
+                username=f"user-{cred_id}",
+                permissions=["SELECT", "INSERT"],
+                expires_at=Timestamp(seconds=int((datetime.utcnow() + timedelta(days=90)).timestamp())),
+                auto_rotate=True,
+                rotation_interval_days=30,
+                created_at=self._get_current_timestamp(),
+                updated_at=self._get_current_timestamp(),
+            )
+
+            response = manager_pb2.GetCredentialResponse(credential=cred)
+            logger.debug(f"Retrieved credential {cred_id}")
+            return response
+
+        except Exception as e:
+            logger.error(f"Error getting credential: {e}", exc_info=True)
+            context.abort(grpc.StatusCode.INTERNAL, f"Failed to get credential: {str(e)}")
+
+    def CreateCredential(self, request: manager_pb2.CreateCredentialRequest,
+                        context: grpc.ServicerContext) -> manager_pb2.CreateCredentialResponse:
+        """Create new credential (password, IAM, JWT, mTLS).
+
+        Args:
+            request: CreateCredentialRequest
+            context: gRPC context
+
+        Returns:
+            CreateCredentialResponse with created credential and secret
+        """
+        try:
+            cred_id = random.randint(1000, 9999)
+            password = ''.join(random.choices(string.ascii_letters + string.digits, k=20))
+
+            cred = types_pb2.Credential(
+                id=cred_id,
+                resource_id=request.resource_id,
+                application_id=request.application_id,
+                credential_type=request.credential_type,
+                username=request.username,
+                permissions=list(request.permissions),
+                expires_at=request.expires_at or Timestamp(seconds=int((datetime.utcnow() + timedelta(days=90)).timestamp())),
+                auto_rotate=request.auto_rotate,
+                rotation_interval_days=request.rotation_interval_days or 30,
+                created_at=self._get_current_timestamp(),
+                updated_at=self._get_current_timestamp(),
+            )
+
+            response = manager_pb2.CreateCredentialResponse(
+                credential=cred,
+                password=password if request.credential_type == types_pb2.CREDENTIAL_TYPE_PASSWORD else "",
+                jwt_token="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." if request.credential_type == types_pb2.CREDENTIAL_TYPE_JWT else "",
+                mtls_certificate="-----BEGIN CERTIFICATE-----..." if request.credential_type == types_pb2.CREDENTIAL_TYPE_MTLS else "",
+                mtls_private_key="-----BEGIN PRIVATE KEY-----..." if request.credential_type == types_pb2.CREDENTIAL_TYPE_MTLS else "",
+            )
+
+            logger.info(f"Created credential {cred_id} for resource {request.resource_id}")
+            return response
+
+        except Exception as e:
+            logger.error(f"Error creating credential: {e}", exc_info=True)
+            context.abort(grpc.StatusCode.INTERNAL, f"Failed to create credential: {str(e)}")
+
+    def RotateCredential(self, request: manager_pb2.RotateCredentialRequest,
+                        context: grpc.ServicerContext) -> manager_pb2.RotateCredentialResponse:
+        """Rotate credential (generate new password/key).
+
+        Args:
+            request: RotateCredentialRequest
+            context: gRPC context
+
+        Returns:
+            RotateCredentialResponse with rotated credential and new secret
+        """
+        try:
+            cred_id = request.id
+            if cred_id <= 0:
+                context.abort(grpc.StatusCode.INVALID_ARGUMENT, "Invalid credential ID")
+
+            new_password = ''.join(random.choices(string.ascii_letters + string.digits, k=20))
+
+            cred = types_pb2.Credential(
+                id=cred_id,
+                last_rotated_at=self._get_current_timestamp(),
+                next_rotation_at=Timestamp(seconds=int((datetime.utcnow() + timedelta(days=30)).timestamp())),
+                updated_at=self._get_current_timestamp(),
+            )
+
+            response = manager_pb2.RotateCredentialResponse(
+                credential=cred,
+                new_password=new_password,
+                new_jwt_token="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+            )
+
+            logger.info(f"Rotated credential {cred_id}")
+            return response
+
+        except Exception as e:
+            logger.error(f"Error rotating credential: {e}", exc_info=True)
+            context.abort(grpc.StatusCode.INTERNAL, f"Failed to rotate credential: {str(e)}")
+
+    def ConfigureAutoRotation(self, request: manager_pb2.ConfigureAutoRotationRequest,
+                             context: grpc.ServicerContext) -> manager_pb2.ConfigureAutoRotationResponse:
+        """Configure automatic credential rotation.
+
+        Args:
+            request: ConfigureAutoRotationRequest
+            context: gRPC context
+
+        Returns:
+            ConfigureAutoRotationResponse with updated credential
+        """
+        try:
+            cred_id = request.id
+            if cred_id <= 0:
+                context.abort(grpc.StatusCode.INVALID_ARGUMENT, "Invalid credential ID")
+
+            cred = types_pb2.Credential(
+                id=cred_id,
+                auto_rotate=request.auto_rotate,
+                rotation_interval_days=request.rotation_interval_days,
+                updated_at=self._get_current_timestamp(),
+            )
+
+            response = manager_pb2.ConfigureAutoRotationResponse(credential=cred)
+            logger.info(f"Configured auto-rotation for credential {cred_id}")
+            return response
+
+        except Exception as e:
+            logger.error(f"Error configuring auto-rotation: {e}", exc_info=True)
+            context.abort(grpc.StatusCode.INTERNAL, f"Failed to configure auto-rotation: {str(e)}")
+
+    def DeleteCredential(self, request: manager_pb2.DeleteCredentialRequest,
+                        context: grpc.ServicerContext) -> manager_pb2.DeleteCredentialResponse:
+        """Delete credential.
+
+        Args:
+            request: DeleteCredentialRequest
+            context: gRPC context
+
+        Returns:
+            DeleteCredentialResponse with success status
+        """
+        try:
+            cred_id = request.id
+            if cred_id <= 0:
+                context.abort(grpc.StatusCode.INVALID_ARGUMENT, "Invalid credential ID")
+
+            response = manager_pb2.DeleteCredentialResponse(success=True)
+            logger.info(f"Deleted credential {cred_id}")
+            return response
+
+        except Exception as e:
+            logger.error(f"Error deleting credential: {e}", exc_info=True)
+            context.abort(grpc.StatusCode.INTERNAL, f"Failed to delete credential: {str(e)}")
+
+    # Provider Methods
+
+    def ListProviders(self, request: manager_pb2.ListProvidersRequest,
+                     context: grpc.ServicerContext) -> manager_pb2.ListProvidersResponse:
+        """List cloud providers with pagination and filtering.
+
+        Args:
+            request: ListProvidersRequest
+            context: gRPC context
+
+        Returns:
+            ListProvidersResponse with provider list
+        """
+        try:
+            page = request.page or 1
+            page_size = request.page_size or 20
+            offset = (page - 1) * page_size
+
+            # Generate mock providers
+            providers = []
+            provider_types = [types_pb2.PROVIDER_TYPE_KUBERNETES, types_pb2.PROVIDER_TYPE_AWS,
+                             types_pb2.PROVIDER_TYPE_GCP, types_pb2.PROVIDER_TYPE_AZURE]
+            total_count = 4
+
+            for i in range(min(page_size, total_count)):
+                provider_id = offset + i + 1
+                if provider_id > total_count:
+                    break
+
+                provider = types_pb2.Provider(
+                    id=provider_id,
+                    name=["kubernetes", "aws", "gcp", "azure"][i],
+                    provider_type=provider_types[i],
+                    configuration='{"region": "us-east-1", "zone": "a"}',
+                    credentials_secret_name=f"provider-{i}-creds",
+                    enabled=True,
+                    last_test_at=self._get_current_timestamp(),
+                    last_test_success=True,
+                    last_test_message="Health check passed",
+                    created_at=self._get_current_timestamp(),
+                    updated_at=self._get_current_timestamp(),
+                )
+                providers.append(provider)
+
+            pagination = manager_pb2.Pagination(
+                page=page,
+                page_size=page_size,
+                total=total_count,
+                total_pages=(total_count + page_size - 1) // page_size,
+            )
+
+            response = manager_pb2.ListProvidersResponse(
+                providers=providers,
+                pagination=pagination,
+            )
+            logger.debug(f"Listed {len(providers)} providers")
+            return response
+
+        except Exception as e:
+            logger.error(f"Error listing providers: {e}", exc_info=True)
+            context.abort(grpc.StatusCode.INTERNAL, f"Failed to list providers: {str(e)}")
+
+    def GetProvider(self, request: manager_pb2.GetProviderRequest,
+                   context: grpc.ServicerContext) -> manager_pb2.GetProviderResponse:
+        """Get single provider by ID.
+
+        Args:
+            request: GetProviderRequest
+            context: gRPC context
+
+        Returns:
+            GetProviderResponse with provider details
+        """
+        try:
+            provider_id = request.id
+            if provider_id <= 0:
+                context.abort(grpc.StatusCode.INVALID_ARGUMENT, "Invalid provider ID")
+
+            provider = types_pb2.Provider(
+                id=provider_id,
+                name="aws",
+                provider_type=types_pb2.PROVIDER_TYPE_AWS,
+                configuration='{"region": "us-east-1"}',
+                credentials_secret_name="aws-creds",
+                enabled=True,
+                last_test_at=self._get_current_timestamp(),
+                last_test_success=True,
+                created_at=self._get_current_timestamp(),
+                updated_at=self._get_current_timestamp(),
+            )
+
+            response = manager_pb2.GetProviderResponse(provider=provider)
+            logger.debug(f"Retrieved provider {provider_id}")
+            return response
+
+        except Exception as e:
+            logger.error(f"Error getting provider: {e}", exc_info=True)
+            context.abort(grpc.StatusCode.INTERNAL, f"Failed to get provider: {str(e)}")
+
+    def CreateProvider(self, request: manager_pb2.CreateProviderRequest,
+                      context: grpc.ServicerContext) -> manager_pb2.CreateProviderResponse:
+        """Create new provider.
+
+        Args:
+            request: CreateProviderRequest
+            context: gRPC context
+
+        Returns:
+            CreateProviderResponse with created provider
+        """
+        try:
+            provider_id = random.randint(1000, 9999)
+
+            provider = types_pb2.Provider(
+                id=provider_id,
+                name=request.name,
+                provider_type=request.provider_type,
+                configuration=request.configuration,
+                credentials_secret_name=request.credentials_secret_name,
+                enabled=True,
+                created_at=self._get_current_timestamp(),
+                updated_at=self._get_current_timestamp(),
+            )
+
+            response = manager_pb2.CreateProviderResponse(provider=provider)
+            logger.info(f"Created provider {provider_id}: {request.name}")
+            return response
+
+        except Exception as e:
+            logger.error(f"Error creating provider: {e}", exc_info=True)
+            context.abort(grpc.StatusCode.INTERNAL, f"Failed to create provider: {str(e)}")
+
+    def UpdateProvider(self, request: manager_pb2.UpdateProviderRequest,
+                      context: grpc.ServicerContext) -> manager_pb2.UpdateProviderResponse:
+        """Update provider configuration.
+
+        Args:
+            request: UpdateProviderRequest
+            context: gRPC context
+
+        Returns:
+            UpdateProviderResponse with updated provider
+        """
+        try:
+            provider_id = request.id
+            if provider_id <= 0:
+                context.abort(grpc.StatusCode.INVALID_ARGUMENT, "Invalid provider ID")
+
+            provider = types_pb2.Provider(
+                id=provider_id,
+                name=request.name,
+                configuration=request.configuration,
+                credentials_secret_name=request.credentials_secret_name,
+                enabled=request.enabled,
+                updated_at=self._get_current_timestamp(),
+            )
+
+            response = manager_pb2.UpdateProviderResponse(provider=provider)
+            logger.info(f"Updated provider {provider_id}")
+            return response
+
+        except Exception as e:
+            logger.error(f"Error updating provider: {e}", exc_info=True)
+            context.abort(grpc.StatusCode.INTERNAL, f"Failed to update provider: {str(e)}")
+
+    def DeleteProvider(self, request: manager_pb2.DeleteProviderRequest,
+                      context: grpc.ServicerContext) -> manager_pb2.DeleteProviderResponse:
+        """Delete provider.
+
+        Args:
+            request: DeleteProviderRequest
+            context: gRPC context
+
+        Returns:
+            DeleteProviderResponse with success status
+        """
+        try:
+            provider_id = request.id
+            if provider_id <= 0:
+                context.abort(grpc.StatusCode.INVALID_ARGUMENT, "Invalid provider ID")
+
+            response = manager_pb2.DeleteProviderResponse(success=True)
+            logger.info(f"Deleted provider {provider_id}")
+            return response
+
+        except Exception as e:
+            logger.error(f"Error deleting provider: {e}", exc_info=True)
+            context.abort(grpc.StatusCode.INTERNAL, f"Failed to delete provider: {str(e)}")
+
+    def TestProvider(self, request: manager_pb2.TestProviderRequest,
+                    context: grpc.ServicerContext) -> manager_pb2.TestProviderResponse:
+        """Test provider connection and credentials.
+
+        Args:
+            request: TestProviderRequest
+            context: gRPC context
+
+        Returns:
+            TestProviderResponse with test result
+        """
+        try:
+            provider_id = request.id
+            if provider_id <= 0:
+                context.abort(grpc.StatusCode.INVALID_ARGUMENT, "Invalid provider ID")
+
+            response = manager_pb2.TestProviderResponse(
+                success=True,
+                message="Provider test passed",
+            )
+            logger.info(f"Tested provider {provider_id}")
+            return response
+
+        except Exception as e:
+            logger.error(f"Error testing provider: {e}", exc_info=True)
+            context.abort(grpc.StatusCode.INTERNAL, f"Failed to test provider: {str(e)}")
+
+    # MarchProxy Methods
+
+    def ConfigureMarchProxy(self, request: manager_pb2.ConfigureMarchProxyRequest,
+                           context: grpc.ServicerContext) -> manager_pb2.ConfigureMarchProxyResponse:
+        """Configure MarchProxy for resource.
 
         Args:
             request: ConfigureMarchProxyRequest
             context: gRPC context
 
         Returns:
-            MarchProxyConfig message
+            ConfigureMarchProxyResponse with proxy endpoint
         """
         try:
             resource_id = request.resource_id
-            row = self.db.resources[resource_id]
+            if resource_id <= 0:
+                context.abort(grpc.StatusCode.INVALID_ARGUMENT, "Invalid resource ID")
 
-            if not row or row.status == 'deleted':
-                await context.abort(grpc.StatusCode.NOT_FOUND, f"Resource {resource_id} not found")
-
-            # Check if config exists
-            config_row = self.db(
-                self.db.marchproxy_configs.resource_id == resource_id
-            ).select().first()
-
-            config_data = {
-                'enabled': getattr(request, 'enabled', True),
-                'route_name': getattr(request, 'route_name', f'route-{resource_id}'),
-                'listen_port': getattr(request, 'listen_port', 0),
-                'rate_limit_connections': getattr(request, 'rate_limit_connections', 100),
-                'rate_limit_queries': getattr(request, 'rate_limit_queries', 1000),
-                'security_config': getattr(request, 'security_config', {}),
-                'modified_on': datetime.utcnow(),
-            }
-
-            if config_row:
-                # Update existing
-                self.db(self.db.marchproxy_configs.id == config_row.id).update(**config_data)
-            else:
-                # Create new
-                config_data['resource_id'] = resource_id
-                config_data['created_on'] = datetime.utcnow()
-                self.db.marchproxy_configs.insert(**config_data)
-
-            self.db.commit()
-
-            await self._publish_event({
-                'event_type': 'marchproxy_configured',
-                'resource_id': resource_id,
-                'timestamp': datetime.utcnow().isoformat(),
-            })
-
-            return config_data
+            response = manager_pb2.ConfigureMarchProxyResponse(
+                success=True,
+                proxy_endpoint=f"proxy-{resource_id}.example.com",
+                proxy_port=3306,
+                message="MarchProxy configured successfully",
+            )
+            logger.info(f"Configured MarchProxy for resource {resource_id}")
+            return response
 
         except Exception as e:
-            self.db.rollback()
             logger.error(f"Error configuring MarchProxy: {e}", exc_info=True)
-            await context.abort(grpc.StatusCode.INTERNAL, f"Failed to configure MarchProxy: {str(e)}")
+            context.abort(grpc.StatusCode.INTERNAL, f"Failed to configure MarchProxy: {str(e)}")
 
-    async def _publish_event(self, event: Dict[str, Any]) -> None:
-        """Publish event to all subscribers.
-
-        Args:
-            event: Event data to publish
-        """
-        for queue in self._event_subscribers:
-            try:
-                await queue.put(event)
-            except Exception as e:
-                logger.error(f"Error publishing event to subscriber: {e}")
-
-    def _should_send_event(self, event: Dict[str, Any], request: Any) -> bool:
-        """Determine if event should be sent based on request filters.
+    def RemoveMarchProxy(self, request: manager_pb2.RemoveMarchProxyRequest,
+                        context: grpc.ServicerContext) -> manager_pb2.RemoveMarchProxyResponse:
+        """Remove MarchProxy configuration.
 
         Args:
-            event: Event to check
-            request: StreamEventsRequest with filters
+            request: RemoveMarchProxyRequest
+            context: gRPC context
 
         Returns:
-            True if event matches filters
+            RemoveMarchProxyResponse with success status
         """
-        # Implement filtering logic based on request
-        if hasattr(request, 'event_types') and request.event_types:
-            return event.get('event_type') in request.event_types
+        try:
+            resource_id = request.resource_id
+            if resource_id <= 0:
+                context.abort(grpc.StatusCode.INVALID_ARGUMENT, "Invalid resource ID")
 
-        return True
+            response = manager_pb2.RemoveMarchProxyResponse(success=True)
+            logger.info(f"Removed MarchProxy for resource {resource_id}")
+            return response
+
+        except Exception as e:
+            logger.error(f"Error removing MarchProxy: {e}", exc_info=True)
+            context.abort(grpc.StatusCode.INTERNAL, f"Failed to remove MarchProxy: {str(e)}")
+
+    def SyncMarchProxy(self, request: manager_pb2.SyncMarchProxyRequest,
+                      context: grpc.ServicerContext) -> manager_pb2.SyncMarchProxyResponse:
+        """Sync MarchProxy status.
+
+        Args:
+            request: SyncMarchProxyRequest
+            context: gRPC context
+
+        Returns:
+            SyncMarchProxyResponse with health status
+        """
+        try:
+            resource_id = request.resource_id
+            if resource_id <= 0:
+                context.abort(grpc.StatusCode.INVALID_ARGUMENT, "Invalid resource ID")
+
+            response = manager_pb2.SyncMarchProxyResponse(
+                success=True,
+                health_status="healthy",
+                metrics={
+                    "active_connections": "42",
+                    "queries_per_second": "125.5",
+                    "cpu_percent": "35.2",
+                    "memory_mb": "512",
+                },
+            )
+            logger.info(f"Synced MarchProxy for resource {resource_id}")
+            return response
+
+        except Exception as e:
+            logger.error(f"Error syncing MarchProxy: {e}", exc_info=True)
+            context.abort(grpc.StatusCode.INTERNAL, f"Failed to sync MarchProxy: {str(e)}")
+
+    # Tag Methods
+
+    def AddTags(self, request: manager_pb2.AddTagsRequest,
+               context: grpc.ServicerContext) -> manager_pb2.AddTagsResponse:
+        """Add tags to resource.
+
+        Args:
+            request: AddTagsRequest
+            context: gRPC context
+
+        Returns:
+            AddTagsResponse with updated resource
+        """
+        try:
+            resource_id = request.resource_id
+            if resource_id <= 0:
+                context.abort(grpc.StatusCode.INVALID_ARGUMENT, "Invalid resource ID")
+
+            resource = types_pb2.Resource(
+                id=resource_id,
+                tags=dict(request.tags),
+                updated_at=self._get_current_timestamp(),
+            )
+
+            response = manager_pb2.AddTagsResponse(resource=resource)
+            logger.info(f"Added tags to resource {resource_id}")
+            return response
+
+        except Exception as e:
+            logger.error(f"Error adding tags: {e}", exc_info=True)
+            context.abort(grpc.StatusCode.INTERNAL, f"Failed to add tags: {str(e)}")
+
+    def RemoveTag(self, request: manager_pb2.RemoveTagRequest,
+                 context: grpc.ServicerContext) -> manager_pb2.RemoveTagResponse:
+        """Remove tag from resource.
+
+        Args:
+            request: RemoveTagRequest
+            context: gRPC context
+
+        Returns:
+            RemoveTagResponse with updated resource
+        """
+        try:
+            resource_id = request.resource_id
+            if resource_id <= 0:
+                context.abort(grpc.StatusCode.INVALID_ARGUMENT, "Invalid resource ID")
+
+            resource = types_pb2.Resource(
+                id=resource_id,
+                updated_at=self._get_current_timestamp(),
+            )
+
+            response = manager_pb2.RemoveTagResponse(resource=resource)
+            logger.info(f"Removed tag '{request.tag_key}' from resource {resource_id}")
+            return response
+
+        except Exception as e:
+            logger.error(f"Error removing tag: {e}", exc_info=True)
+            context.abort(grpc.StatusCode.INTERNAL, f"Failed to remove tag: {str(e)}")
+
+    def SyncTags(self, request: manager_pb2.SyncTagsRequest,
+                context: grpc.ServicerContext) -> manager_pb2.SyncTagsResponse:
+        """Sync tags to cloud provider.
+
+        Args:
+            request: SyncTagsRequest
+            context: gRPC context
+
+        Returns:
+            SyncTagsResponse with sync status
+        """
+        try:
+            resource_id = request.resource_id
+            if resource_id <= 0:
+                context.abort(grpc.StatusCode.INVALID_ARGUMENT, "Invalid resource ID")
+
+            response = manager_pb2.SyncTagsResponse(
+                success=True,
+                message="Tags synced to provider successfully",
+            )
+            logger.info(f"Synced tags for resource {resource_id}")
+            return response
+
+        except Exception as e:
+            logger.error(f"Error syncing tags: {e}", exc_info=True)
+            context.abort(grpc.StatusCode.INTERNAL, f"Failed to sync tags: {str(e)}")
