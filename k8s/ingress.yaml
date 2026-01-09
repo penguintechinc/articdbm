@@ -4,26 +4,26 @@ metadata:
   name: articdbm-ingress
   namespace: articdbm
   annotations:
-    cert-manager.io/cluster-issuer: "letsencrypt-prod"
     nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/rewrite-target: /
 spec:
   ingressClassName: nginx
   tls:
   - hosts:
     - articdbm.penguintech.io
-    secretName: articdbm-tls
+    secretName: penguintech-wildcard-tls
   rules:
   - host: articdbm.penguintech.io
     http:
       paths:
-      - path: /
+      - path: /api
         pathType: Prefix
         backend:
           service:
             name: manager
             port:
               number: 8000
-      - path: /ui
+      - path: /
         pathType: Prefix
         backend:
           service:
