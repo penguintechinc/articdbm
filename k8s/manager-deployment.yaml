@@ -33,8 +33,8 @@ spec:
         fsGroup: 1000
       containers:
       - name: manager
-        image: articdbm-manager:latest
-        imagePullPolicy: IfNotPresent
+        image: register.dal2.penguintech.io/articdbm/articdbm-manager:v2.0
+        imagePullPolicy: Always
         ports:
         - name: http
           containerPort: 8000

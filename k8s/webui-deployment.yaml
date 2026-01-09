@@ -29,8 +29,8 @@ spec:
         fsGroup: 1000
       containers:
       - name: webui
-        image: articdbm-webui:latest
-        imagePullPolicy: IfNotPresent
+        image: register.dal2.penguintech.io/articdbm/articdbm-webui:v2.0
+        imagePullPolicy: Always
         ports:
         - name: http
           containerPort: 3000
