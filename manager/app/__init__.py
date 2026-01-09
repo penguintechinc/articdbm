@@ -52,6 +52,15 @@ def create_app(config_name='development'):
             'service': 'articdbm-manager'
         }), 200
 
+    # Readiness check route (K8s probe)
+    @app.route('/api/ready', methods=['GET'])
+    def readiness_check():
+        """Readiness check endpoint for Kubernetes"""
+        return jsonify({
+            'status': 'ready',
+            'service': 'articdbm-manager'
+        }), 200
+
     # Version route
     @app.route('/api/version', methods=['GET'])
     def version():

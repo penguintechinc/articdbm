@@ -15,3 +15,4 @@ resources:
   - manager-deployment.yaml
   - webui-service.yaml
   - webui-deployment.yaml
+  - ingress.yaml

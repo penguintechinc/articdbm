@@ -25,11 +25,11 @@ spec:
       serviceAccountName: default
       securityContext:
         runAsNonRoot: true
-        runAsUser: 1000
-        fsGroup: 1000
+        runAsUser: 101
+        fsGroup: 101
       containers:
       - name: webui
-        image: register.dal2.penguintech.io/articdbm/articdbm-webui:v2.0
+        image: register.dal2.penguintech.io/articdbm/articdbm-webui:v2.3
         imagePullPolicy: Always
         ports:
         - name: http

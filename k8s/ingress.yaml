@@ -1,0 +1,32 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: articdbm-ingress
+  namespace: articdbm
+  annotations:
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+spec:
+  ingressClassName: nginx
+  tls:
+  - hosts:
+    - articdbm.penguintech.io
+    secretName: articdbm-tls
+  rules:
+  - host: articdbm.penguintech.io
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: manager
+            port:
+              number: 8000
+      - path: /ui
+        pathType: Prefix
+        backend:
+          service:
+            name: webui
+            port:
+              number: 3000
