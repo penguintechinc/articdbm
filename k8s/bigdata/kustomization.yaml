@@ -1,0 +1,28 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+metadata:
+  name: articdbm-bigdata
+  namespace: articdbm-bigdata
+
+namespace: articdbm-bigdata
+
+resources:
+  - namespace.yaml
+  - spark-operator.yaml
+  - flink-operator.yaml
+  - trino-operator.yaml
+  # Note: Object storage (MinIO) is managed by NEST project, not ArticDBM
+
+images:
+  - name: spark-operator
+    newTag: v1.3.10
+  - name: flink-kubernetes-operator
+    newTag: 1.7.1
+  - name: trino
+    newTag: 431
+
+commonLabels:
+  app.kubernetes.io/part-of: articdbm
+  app.kubernetes.io/component: bigdata
+  app.kubernetes.io/version: v1

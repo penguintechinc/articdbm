@@ -2,6 +2,7 @@
 Flask>=3.1.0
 Flask-Security-Too==5.7.1
 Flask-CORS==4.0.0
+Flask-JWT-Extended==4.5.3
 flask-sqlalchemy==3.1.1
 
 # Database - PyDAL (mandatory for operations) and SQLAlchemy (init only)

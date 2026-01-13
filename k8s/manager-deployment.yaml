@@ -33,7 +33,7 @@ spec:
         fsGroup: 1000
       containers:
       - name: manager
-        image: register.dal2.penguintech.io/articdbm/articdbm-manager:v2.1
+        image: registry-dal2.penguintech.io/articdbm/articdbm-manager:v2.10
         imagePullPolicy: Always
         ports:
         - name: http
@@ -72,7 +72,7 @@ spec:
               fieldPath: status.podIP
         resources:
           requests:
-            cpu: 500m
+            cpu: 300m
             memory: 512Mi
           limits:
             cpu: 1000m

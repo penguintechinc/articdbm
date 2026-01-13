@@ -1,0 +1,684 @@
+syntax = "proto3";
+
+package articdbm;
+
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/empty.proto";
+import "articdbm/types.proto";
+
+option go_package = "github.com/penguin-tech-inc/articdbm/proto/articdbm";
+
+// BigData service for managing big data clusters and streaming
+service BigDataService {
+  // HDFS operations
+  rpc ListHDFSClusters(ListRequest) returns (HDFSClusterList);
+  rpc GetHDFSCluster(GetByIdRequest) returns (HDFSCluster);
+  rpc CreateHDFSCluster(CreateHDFSClusterRequest) returns (HDFSCluster);
+  rpc UpdateHDFSCluster(UpdateHDFSClusterRequest) returns (HDFSCluster);
+  rpc DeleteHDFSCluster(DeleteRequest) returns (google.protobuf.Empty);
+  rpc ScaleHDFSCluster(ScaleHDFSRequest) returns (HDFSCluster);
+
+  // Trino operations
+  rpc ListTrinoClusters(ListRequest) returns (TrinoClusterList);
+  rpc GetTrinoCluster(GetByIdRequest) returns (TrinoCluster);
+  rpc CreateTrinoCluster(CreateTrinoClusterRequest) returns (TrinoCluster);
+  rpc UpdateTrinoCluster(UpdateTrinoClusterRequest) returns (TrinoCluster);
+  rpc DeleteTrinoCluster(DeleteRequest) returns (google.protobuf.Empty);
+  rpc ScaleTrinoCluster(ScaleTrinoRequest) returns (TrinoCluster);
+  rpc AddTrinoCatalog(AddTrinoCatalogRequest) returns (TrinoCatalog);
+  rpc RemoveTrinoCatalog(RemoveTrinoCatalogRequest) returns (google.protobuf.Empty);
+  rpc ExecuteTrinoQuery(TrinoQueryRequest) returns (TrinoQueryResult);
+
+  // Spark operations
+  rpc ListSparkClusters(ListRequest) returns (SparkClusterList);
+  rpc GetSparkCluster(GetByIdRequest) returns (SparkCluster);
+  rpc CreateSparkCluster(CreateSparkClusterRequest) returns (SparkCluster);
+  rpc DeleteSparkCluster(DeleteRequest) returns (google.protobuf.Empty);
+  rpc ScaleSparkCluster(ScaleSparkRequest) returns (SparkCluster);
+  rpc SubmitSparkJob(SubmitSparkJobRequest) returns (SparkJob);
+  rpc GetSparkJob(GetByIdRequest) returns (SparkJob);
+  rpc KillSparkJob(DeleteRequest) returns (google.protobuf.Empty);
+
+  // Flink operations
+  rpc ListFlinkClusters(ListRequest) returns (FlinkClusterList);
+  rpc GetFlinkCluster(GetByIdRequest) returns (FlinkCluster);
+  rpc CreateFlinkCluster(CreateFlinkClusterRequest) returns (FlinkCluster);
+  rpc DeleteFlinkCluster(DeleteRequest) returns (google.protobuf.Empty);
+  rpc ScaleFlinkCluster(ScaleFlinkRequest) returns (FlinkCluster);
+  rpc SubmitFlinkJob(SubmitFlinkJobRequest) returns (FlinkJob);
+  rpc GetFlinkJob(GetByIdRequest) returns (FlinkJob);
+  rpc CancelFlinkJob(DeleteRequest) returns (google.protobuf.Empty);
+  rpc CreateSavepoint(CreateSavepointRequest) returns (Savepoint);
+
+  // HBase operations
+  rpc ListHBaseClusters(ListRequest) returns (HBaseClusterList);
+  rpc GetHBaseCluster(GetByIdRequest) returns (HBaseCluster);
+  rpc CreateHBaseCluster(CreateHBaseClusterRequest) returns (HBaseCluster);
+  rpc DeleteHBaseCluster(DeleteRequest) returns (google.protobuf.Empty);
+  rpc ScaleHBaseCluster(ScaleHBaseRequest) returns (HBaseCluster);
+
+  // Storage operations
+  rpc ListStorageBackends(ListRequest) returns (StorageBackendList);
+  rpc GetStorageBackend(GetByIdRequest) returns (StorageBackend);
+  rpc CreateStorageBackend(CreateStorageBackendRequest) returns (StorageBackend);
+  rpc DeleteStorageBackend(DeleteRequest) returns (google.protobuf.Empty);
+
+  // Iceberg operations
+  rpc ListIcebergCatalogs(ListRequest) returns (IcebergCatalogList);
+  rpc CreateIcebergCatalog(CreateIcebergCatalogRequest) returns (IcebergCatalog);
+  rpc DeleteIcebergCatalog(DeleteRequest) returns (google.protobuf.Empty);
+
+  // Streaming operations
+  rpc StreamClusterEvents(StreamRequest) returns (stream ClusterEvent);
+}
+
+// ===== Enums =====
+
+enum BigDataEngine {
+  BIG_DATA_ENGINE_UNSPECIFIED = 0;
+  BIG_DATA_ENGINE_HDFS = 1;
+  BIG_DATA_ENGINE_TRINO = 2;
+  BIG_DATA_ENGINE_SPARK = 3;
+  BIG_DATA_ENGINE_FLINK = 4;
+  BIG_DATA_ENGINE_HBASE = 5;
+}
+
+enum ClusterStatus {
+  CLUSTER_STATUS_UNSPECIFIED = 0;
+  CLUSTER_STATUS_PROVISIONING = 1;
+  CLUSTER_STATUS_RUNNING = 2;
+  CLUSTER_STATUS_SCALING = 3;
+  CLUSTER_STATUS_STOPPING = 4;
+  CLUSTER_STATUS_STOPPED = 5;
+  CLUSTER_STATUS_FAILED = 6;
+  CLUSTER_STATUS_TERMINATED = 7;
+}
+
+enum JobStatus {
+  JOB_STATUS_UNSPECIFIED = 0;
+  JOB_STATUS_PENDING = 1;
+  JOB_STATUS_RUNNING = 2;
+  JOB_STATUS_SUCCEEDED = 3;
+  JOB_STATUS_FAILED = 4;
+  JOB_STATUS_CANCELLED = 5;
+}
+
+enum StorageType {
+  STORAGE_TYPE_UNSPECIFIED = 0;
+  STORAGE_TYPE_S3 = 1;
+  STORAGE_TYPE_GCS = 2;
+  STORAGE_TYPE_AZURE_BLOB = 3;
+  STORAGE_TYPE_HDFS = 4;
+  STORAGE_TYPE_LOCAL = 5;
+}
+
+enum QueryFormat {
+  QUERY_FORMAT_UNSPECIFIED = 0;
+  QUERY_FORMAT_SQL = 1;
+  QUERY_FORMAT_JSON = 2;
+  QUERY_FORMAT_CSV = 3;
+  QUERY_FORMAT_PARQUET = 4;
+}
+
+// ===== Common Request/Response Messages =====
+
+message ListRequest {
+  int32 page = 1;
+  int32 page_size = 2;
+  string filter = 3;
+}
+
+message GetByIdRequest {
+  int64 id = 1;
+}
+
+message DeleteRequest {
+  int64 id = 1;
+}
+
+message StreamRequest {
+  repeated string cluster_ids = 1;
+  repeated BigDataEngine engine_types = 2;
+}
+
+// ===== HDFS Messages =====
+
+message HDFSCluster {
+  int64 id = 1;
+  string name = 2;
+  string description = 3;
+  ClusterStatus status = 4;
+  string status_message = 5;
+
+  // Configuration
+  string namenode_host = 6;
+  int32 namenode_port = 7;
+  int32 replication_factor = 8;
+  int32 block_size_mb = 9;
+  string hadoop_version = 10;
+
+  // Scaling
+  int32 datanode_count = 11;
+  string datanode_instance_class = 12;
+
+  // Storage
+  int64 total_storage_gb = 13;
+  int64 used_storage_gb = 14;
+  int64 free_storage_gb = 15;
+
+  // Network
+  string vpc_id = 16;
+  repeated string subnet_ids = 17;
+  bool enable_high_availability = 18;
+
+  // Security
+  TLSMode tls_mode = 19;
+  string kerberos_realm = 20;
+
+  // Tags
+  map<string, string> tags = 21;
+
+  // Timestamps
+  google.protobuf.Timestamp created_at = 22;
+  google.protobuf.Timestamp updated_at = 23;
+}
+
+message HDFSClusterList {
+  repeated HDFSCluster clusters = 1;
+  Pagination pagination = 2;
+}
+
+message CreateHDFSClusterRequest {
+  string name = 1;
+  string description = 2;
+  int64 provider_id = 3;
+  string namenode_host = 4;
+  int32 namenode_port = 5;
+  int32 replication_factor = 6;
+  int32 block_size_mb = 7;
+  int32 datanode_count = 8;
+  string datanode_instance_class = 9;
+  string vpc_id = 10;
+  repeated string subnet_ids = 11;
+  bool enable_high_availability = 12;
+  TLSMode tls_mode = 13;
+  map<string, string> tags = 14;
+}
+
+message UpdateHDFSClusterRequest {
+  int64 id = 1;
+  string description = 2;
+  int32 replication_factor = 3;
+  int32 block_size_mb = 4;
+  TLSMode tls_mode = 5;
+  map<string, string> tags = 6;
+}
+
+message ScaleHDFSRequest {
+  int64 id = 1;
+  int32 datanode_count = 2;
+  string datanode_instance_class = 3;
+}
+
+// ===== Trino Messages =====
+
+message TrinoCluster {
+  int64 id = 1;
+  string name = 2;
+  string description = 3;
+  ClusterStatus status = 4;
+  string status_message = 5;
+
+  // Configuration
+  string coordinator_host = 6;
+  int32 coordinator_port = 7;
+  int32 worker_count = 8;
+  string worker_instance_class = 9;
+  string trino_version = 10;
+
+  // Catalogs
+  repeated TrinoCatalog catalogs = 11;
+
+  // Network
+  string vpc_id = 12;
+  repeated string subnet_ids = 13;
+
+  // Security
+  TLSMode tls_mode = 14;
+  string ldap_server = 15;
+  bool enable_ldap = 16;
+
+  // Performance
+  int32 query_max_memory_mb = 17;
+  int32 query_timeout_seconds = 18;
+
+  // Tags
+  map<string, string> tags = 19;
+
+  // Timestamps
+  google.protobuf.Timestamp created_at = 20;
+  google.protobuf.Timestamp updated_at = 21;
+}
+
+message TrinoClusterList {
+  repeated TrinoCluster clusters = 1;
+  Pagination pagination = 2;
+}
+
+message TrinoCatalog {
+  int64 id = 1;
+  int64 cluster_id = 2;
+  string name = 3;
+  string connector_name = 4;
+  string configuration = 5;
+  google.protobuf.Timestamp created_at = 6;
+  google.protobuf.Timestamp updated_at = 7;
+}
+
+message CreateTrinoClusterRequest {
+  string name = 1;
+  string description = 2;
+  int64 provider_id = 3;
+  string coordinator_host = 4;
+  int32 coordinator_port = 5;
+  int32 worker_count = 6;
+  string worker_instance_class = 7;
+  string vpc_id = 8;
+  repeated string subnet_ids = 9;
+  TLSMode tls_mode = 10;
+  int32 query_max_memory_mb = 11;
+  int32 query_timeout_seconds = 12;
+  map<string, string> tags = 13;
+}
+
+message UpdateTrinoClusterRequest {
+  int64 id = 1;
+  string description = 2;
+  int32 worker_count = 3;
+  int32 query_max_memory_mb = 4;
+  int32 query_timeout_seconds = 5;
+  bool enable_ldap = 6;
+  string ldap_server = 7;
+  TLSMode tls_mode = 8;
+  map<string, string> tags = 9;
+}
+
+message ScaleTrinoRequest {
+  int64 id = 1;
+  int32 worker_count = 2;
+  string worker_instance_class = 3;
+}
+
+message AddTrinoCatalogRequest {
+  int64 cluster_id = 1;
+  string name = 2;
+  string connector_name = 3;
+  string configuration = 4;
+}
+
+message RemoveTrinoCatalogRequest {
+  int64 catalog_id = 1;
+}
+
+message TrinoQueryRequest {
+  int64 cluster_id = 1;
+  string query = 2;
+  string catalog = 3;
+  string schema = 4;
+  QueryFormat result_format = 5;
+  int32 max_rows = 6;
+  int32 timeout_seconds = 7;
+}
+
+message TrinoQueryResult {
+  string query_id = 1;
+  JobStatus status = 2;
+  repeated string columns = 3;
+  repeated string data = 4;
+  string error_message = 5;
+  google.protobuf.Timestamp executed_at = 6;
+}
+
+// ===== Spark Messages =====
+
+message SparkCluster {
+  int64 id = 1;
+  string name = 2;
+  string description = 3;
+  ClusterStatus status = 4;
+  string status_message = 5;
+
+  // Configuration
+  string master_host = 6;
+  int32 master_port = 7;
+  int32 worker_count = 8;
+  string worker_instance_class = 9;
+  string spark_version = 10;
+
+  // Resources
+  int32 executor_cores = 11;
+  int32 executor_memory_gb = 12;
+  int32 driver_memory_gb = 13;
+
+  // Network
+  string vpc_id = 14;
+  repeated string subnet_ids = 15;
+
+  // Storage
+  StorageType storage_type = 16;
+  string storage_endpoint = 17;
+
+  // Tags
+  map<string, string> tags = 18;
+
+  // Timestamps
+  google.protobuf.Timestamp created_at = 19;
+  google.protobuf.Timestamp updated_at = 20;
+}
+
+message SparkClusterList {
+  repeated SparkCluster clusters = 1;
+  Pagination pagination = 2;
+}
+
+message CreateSparkClusterRequest {
+  string name = 1;
+  string description = 2;
+  int64 provider_id = 3;
+  string master_host = 4;
+  int32 master_port = 5;
+  int32 worker_count = 6;
+  string worker_instance_class = 7;
+  int32 executor_cores = 8;
+  int32 executor_memory_gb = 9;
+  int32 driver_memory_gb = 10;
+  string vpc_id = 11;
+  repeated string subnet_ids = 12;
+  StorageType storage_type = 13;
+  string storage_endpoint = 14;
+  map<string, string> tags = 15;
+}
+
+message ScaleSparkRequest {
+  int64 id = 1;
+  int32 worker_count = 2;
+  string worker_instance_class = 3;
+  int32 executor_cores = 4;
+  int32 executor_memory_gb = 5;
+}
+
+message SparkJob {
+  int64 id = 1;
+  int64 cluster_id = 2;
+  string job_id = 3;
+  string name = 4;
+  JobStatus status = 5;
+  string status_message = 6;
+  int32 progress_percent = 7;
+  google.protobuf.Timestamp submitted_at = 8;
+  google.protobuf.Timestamp started_at = 9;
+  google.protobuf.Timestamp completed_at = 10;
+}
+
+message SubmitSparkJobRequest {
+  int64 cluster_id = 1;
+  string job_name = 2;
+  string main_class = 3;
+  string jar_path = 4;
+  repeated string arguments = 5;
+  map<string, string> spark_properties = 6;
+}
+
+// ===== Flink Messages =====
+
+message FlinkCluster {
+  int64 id = 1;
+  string name = 2;
+  string description = 3;
+  ClusterStatus status = 4;
+  string status_message = 5;
+
+  // Configuration
+  string jobmanager_host = 6;
+  int32 jobmanager_port = 7;
+  int32 taskmanager_count = 8;
+  string taskmanager_instance_class = 9;
+  string flink_version = 10;
+
+  // Resources
+  int32 task_slots_per_taskmanager = 11;
+  int32 taskmanager_memory_gb = 12;
+  int32 jobmanager_memory_gb = 13;
+
+  // Network
+  string vpc_id = 14;
+  repeated string subnet_ids = 15;
+
+  // High Availability
+  bool enable_high_availability = 16;
+  string ha_storage_path = 17;
+
+  // Tags
+  map<string, string> tags = 18;
+
+  // Timestamps
+  google.protobuf.Timestamp created_at = 19;
+  google.protobuf.Timestamp updated_at = 20;
+}
+
+message FlinkClusterList {
+  repeated FlinkCluster clusters = 1;
+  Pagination pagination = 2;
+}
+
+message CreateFlinkClusterRequest {
+  string name = 1;
+  string description = 2;
+  int64 provider_id = 3;
+  string jobmanager_host = 4;
+  int32 jobmanager_port = 5;
+  int32 taskmanager_count = 6;
+  string taskmanager_instance_class = 7;
+  int32 task_slots_per_taskmanager = 8;
+  int32 taskmanager_memory_gb = 9;
+  int32 jobmanager_memory_gb = 10;
+  string vpc_id = 11;
+  repeated string subnet_ids = 12;
+  bool enable_high_availability = 13;
+  string ha_storage_path = 14;
+  map<string, string> tags = 15;
+}
+
+message ScaleFlinkRequest {
+  int64 id = 1;
+  int32 taskmanager_count = 2;
+  string taskmanager_instance_class = 3;
+}
+
+message FlinkJob {
+  int64 id = 1;
+  int64 cluster_id = 2;
+  string job_id = 3;
+  string name = 4;
+  JobStatus status = 5;
+  string status_message = 6;
+  int32 running_tasks = 7;
+  int32 total_tasks = 8;
+  google.protobuf.Timestamp submitted_at = 9;
+  google.protobuf.Timestamp started_at = 10;
+  google.protobuf.Timestamp completed_at = 11;
+}
+
+message SubmitFlinkJobRequest {
+  int64 cluster_id = 1;
+  string job_name = 2;
+  string jar_path = 3;
+  string main_class = 4;
+  repeated string arguments = 5;
+  int32 parallelism = 6;
+  map<string, string> flink_properties = 7;
+}
+
+message CreateSavepointRequest {
+  int64 job_id = 1;
+  string savepoint_target_directory = 2;
+}
+
+message Savepoint {
+  int64 id = 1;
+  int64 job_id = 2;
+  string savepoint_path = 3;
+  google.protobuf.Timestamp created_at = 4;
+}
+
+// ===== HBase Messages =====
+
+message HBaseCluster {
+  int64 id = 1;
+  string name = 2;
+  string description = 3;
+  ClusterStatus status = 4;
+  string status_message = 5;
+
+  // Configuration
+  string zookeeper_quorum = 6;
+  int32 zookeeper_client_port = 7;
+  int32 regionserver_count = 8;
+  string regionserver_instance_class = 9;
+  string hbase_version = 10;
+
+  // Storage
+  int64 total_storage_gb = 11;
+  int64 used_storage_gb = 12;
+
+  // Network
+  string vpc_id = 13;
+  repeated string subnet_ids = 14;
+
+  // Performance
+  int32 max_file_size_mb = 15;
+  int32 hfile_compression_type = 16;
+
+  // Tags
+  map<string, string> tags = 17;
+
+  // Timestamps
+  google.protobuf.Timestamp created_at = 18;
+  google.protobuf.Timestamp updated_at = 19;
+}
+
+message HBaseClusterList {
+  repeated HBaseCluster clusters = 1;
+  Pagination pagination = 2;
+}
+
+message CreateHBaseClusterRequest {
+  string name = 1;
+  string description = 2;
+  int64 provider_id = 3;
+  string zookeeper_quorum = 4;
+  int32 zookeeper_client_port = 5;
+  int32 regionserver_count = 6;
+  string regionserver_instance_class = 7;
+  string vpc_id = 8;
+  repeated string subnet_ids = 9;
+  int32 max_file_size_mb = 10;
+  map<string, string> tags = 11;
+}
+
+message ScaleHBaseRequest {
+  int64 id = 1;
+  int32 regionserver_count = 2;
+  string regionserver_instance_class = 3;
+}
+
+// ===== Storage Backend Messages =====
+
+message StorageBackend {
+  int64 id = 1;
+  string name = 2;
+  string description = 3;
+  StorageType storage_type = 4;
+  string endpoint = 5;
+  int64 capacity_gb = 6;
+  int64 used_gb = 7;
+  bool enabled = 8;
+
+  // Credentials reference
+  string credentials_secret_name = 9;
+
+  // Configuration (JSON string)
+  string configuration = 10;
+
+  // Tags
+  map<string, string> tags = 11;
+
+  // Timestamps
+  google.protobuf.Timestamp created_at = 12;
+  google.protobuf.Timestamp updated_at = 13;
+}
+
+message StorageBackendList {
+  repeated StorageBackend backends = 1;
+  Pagination pagination = 2;
+}
+
+message CreateStorageBackendRequest {
+  string name = 1;
+  string description = 2;
+  StorageType storage_type = 3;
+  string endpoint = 4;
+  string credentials_secret_name = 5;
+  string configuration = 6;
+  map<string, string> tags = 7;
+}
+
+// ===== Iceberg Catalog Messages =====
+
+message IcebergCatalog {
+  int64 id = 1;
+  int64 storage_backend_id = 2;
+  string name = 3;
+  string description = 4;
+  string catalog_location = 5;
+  string warehouse_location = 6;
+
+  // Configuration
+  map<string, string> catalog_properties = 7;
+
+  // Tags
+  map<string, string> tags = 8;
+
+  // Timestamps
+  google.protobuf.Timestamp created_at = 9;
+  google.protobuf.Timestamp updated_at = 10;
+}
+
+message IcebergCatalogList {
+  repeated IcebergCatalog catalogs = 1;
+  Pagination pagination = 2;
+}
+
+message CreateIcebergCatalogRequest {
+  int64 storage_backend_id = 1;
+  string name = 2;
+  string description = 3;
+  string catalog_location = 4;
+  string warehouse_location = 5;
+  map<string, string> catalog_properties = 6;
+  map<string, string> tags = 7;
+}
+
+// ===== Cluster Event Messages =====
+
+message ClusterEvent {
+  string event_id = 1;
+  BigDataEngine engine_type = 2;
+  string cluster_id = 3;
+  string cluster_name = 4;
+  string event_type = 5;
+  string message = 6;
+  ClusterStatus cluster_status = 7;
+  map<string, string> metadata = 8;
+  google.protobuf.Timestamp timestamp = 9;
+}

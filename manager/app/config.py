@@ -28,15 +28,32 @@ class Config:
     DB_USER = os.getenv("DB_USER", "articdbm")
     DB_PASSWORD = os.getenv("DB_PASSWORD", "")
 
-    # Build PyDAL database URI
-    if DB_TYPE == "postgres":
-        PYDAL_URI = f"postgres://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
-    elif DB_TYPE == "mysql":
-        PYDAL_URI = f"mysql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
-    elif DB_TYPE == "sqlite":
-        PYDAL_URI = f"sqlite:///{os.getenv('SQLITE_PATH', '/tmp/articdbm.db')}"
-    else:
-        PYDAL_URI = f"postgres://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
+    @classmethod
+    def get_pydal_uri(cls):
+        """Build PyDAL database URI at runtime."""
+        # First, check if DATABASE_URL is set (Kubernetes way)
+        database_url = os.getenv("DATABASE_URL")
+        if database_url:
+            # Convert postgresql:// to postgres:// for PyDAL compatibility
+            if database_url.startswith("postgresql://"):
+                database_url = database_url.replace("postgresql://", "postgres://", 1)
+            return database_url
+
+        # Fall back to building from individual variables
+        db_type = os.getenv("DB_TYPE", "postgres")
+        if db_type == "postgres":
+            return f"postgres://{cls.DB_USER}:{cls.DB_PASSWORD}@{cls.DB_HOST}:{cls.DB_PORT}/{cls.DB_NAME}"
+        elif db_type == "mysql":
+            return f"mysql://{cls.DB_USER}:{cls.DB_PASSWORD}@{cls.DB_HOST}:{cls.DB_PORT}/{cls.DB_NAME}"
+        elif db_type == "sqlite":
+            return f"sqlite:///{os.getenv('SQLITE_PATH', '/tmp/articdbm.db')}"
+        else:
+            return f"postgres://{cls.DB_USER}:{cls.DB_PASSWORD}@{cls.DB_HOST}:{cls.DB_PORT}/{cls.DB_NAME}"
+
+    # For backwards compatibility, set at class level (will be overridden at runtime)
+    PYDAL_URI = os.getenv("DATABASE_URL", "postgres://articdbm:@localhost:5432/articdbm")
+    if PYDAL_URI and PYDAL_URI.startswith("postgresql://"):
+        PYDAL_URI = PYDAL_URI.replace("postgresql://", "postgres://", 1)
 
     # Redis settings
     REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")

@@ -4,7 +4,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/common/Button'
 import { Input } from '@/components/common/Input'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/common/Dialog'
-import { AlertCircle, Plus, Sync, Trash2, RefreshCw } from 'lucide-react'
+import { AlertCircle, Plus, Trash2, RefreshCw } from 'lucide-react'
 
 interface Application {
   id: string
@@ -123,7 +123,7 @@ export default function Applications() {
             onClick={() => syncMutation.mutate()}
             disabled={syncMutation.isPending}
           >
-            <Sync className={`h-4 w-4 mr-2 ${syncMutation.isPending ? 'animate-spin' : ''}`} />
+            <RefreshCw className={`h-4 w-4 mr-2 ${syncMutation.isPending ? 'animate-spin' : ''}`} />
             Elder Sync
           </Button>
           <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>

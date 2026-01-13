@@ -1,6 +1,6 @@
 """Utility modules for the ArticDBM manager application."""
 
-from manager.app.utils.api_responses import (
+from app.utils.api_responses import (
     created_response,
     error_response,
     forbidden_response,
@@ -9,7 +9,7 @@ from manager.app.utils.api_responses import (
     success_response,
     validation_error_response,
 )
-from manager.app.utils.pydal_helpers import (
+from app.utils.pydal_helpers import (
     row_to_dict,
     rows_to_list,
     paginate_query,

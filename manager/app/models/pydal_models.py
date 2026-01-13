@@ -354,4 +354,30 @@ def define_models(db: DAL) -> None:
         Field('created_on', 'datetime', default=datetime.utcnow, writable=False),
     )
 
+    # ========================
+    # Database Explorer Audit Logs
+    # ========================
+
+    db.define_table(
+        'explorer_audit_log',
+        Field('user_id', 'reference auth_user', required=True,
+              comment='User who accessed explorer'),
+        Field('action', 'string', required=True,
+              requires=IS_IN_SET(['view_table', 'view_schema', 'view_sample']),
+              default='view_table',
+              comment='Explorer action type'),
+        Field('resource_id', 'integer', required=True,
+              comment='Resource (cluster) ID accessed'),
+        Field('table', 'string', required=True,
+              comment='Table name accessed'),
+        Field('pii_accessed', 'boolean', default=False,
+              comment='Whether PII fields were accessed'),
+        Field('ip_address', 'string',
+              comment='Source IP address'),
+        Field('user_agent', 'string',
+              comment='HTTP user agent'),
+        Field('timestamp', 'datetime', default=datetime.utcnow, writable=False,
+              comment='Access timestamp'),
+    )
+
     db.commit()

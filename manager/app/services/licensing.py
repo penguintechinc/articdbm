@@ -10,7 +10,7 @@ from typing import Any, Dict, Optional, Tuple
 
 from pydal import DAL
 
-from manager.app.integrations.license_client import (
+from app.integrations.license_client import (
     LicenseClient,
     get_resource_limit,
     is_feature_enabled,

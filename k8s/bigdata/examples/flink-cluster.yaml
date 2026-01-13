@@ -1,0 +1,268 @@
+---
+# Example FlinkDeployment for real-time stream processing with ArticDBM
+apiVersion: flink.apache.org/v1beta1
+kind: FlinkDeployment
+metadata:
+  name: articdbm-stream-processor
+  namespace: articdbm-bigdata
+  labels:
+    app.kubernetes.io/name: flink
+    app.kubernetes.io/component: application
+spec:
+  image: flink:1.18.0-scala_2.12-java11
+  imagePullPolicy: IfNotPresent
+  flinkVersion: v1_18
+
+  serviceAccount: flink
+
+  mode: Native
+
+  replicas: 1
+
+  jobManager:
+    replicas: 1
+    resource:
+      memory: "2048m"
+      cpu: 1000m
+
+  taskManager:
+    replicas: 3
+    resource:
+      memory: "2048m"
+      cpu: 1000m
+
+  job:
+    jarURI: s3a://articdbm-jobs/stream/query-monitor.jar
+    entryClass: com.articdbm.stream.QueryMonitor
+    parallelism: 6
+    upgradeMode: stateless
+    allowNonRestoredState: false
+    savepointTriggerNonce: 0
+
+    args:
+      - "--broker"
+      - "kafka:9092"
+      - "--topic"
+      - "articdbm-queries"
+      - "--output-topic"
+      - "articdbm-alerts"
+      - "--window-size"
+      - "60"
+
+  configuration:
+    "jobmanager.memory.process.size": "2048m"
+    "taskmanager.memory.process.size": "2048m"
+    "state.backend": "rocksdb"
+    "state.backend.rocksdb.memory.managed": "true"
+    "state.backend.rocksdb.memory.fixed-per-slot": "1024m"
+    "state.backend.incremental": "true"
+    "state.checkpoints.dir": "s3a://articdbm-checkpoints/flink"
+    "state.savepoints.dir": "s3a://articdbm-checkpoints/flink/savepoints"
+    "heartbeat.interval": "10000"
+    "heartbeat.timeout": "50000"
+    "taskmanager.network.memory.fraction": "0.1"
+    "taskmanager.network.memory.max": "512m"
+    "taskmanager.cpu.cores": "1.0"
+    "parallelism.default": "6"
+    "rest.port": "8081"
+    "rest.bind-address": "0.0.0.0"
+
+  envFrom:
+    - configMapRef:
+        name: flink-config
+
+  env:
+    - name: FLINK_ENV_JAVA_OPTS_JM
+      value: "-XX:+UseG1GC -XX:MaxGCPauseMillis=50"
+    - name: FLINK_ENV_JAVA_OPTS_TM
+      value: "-XX:+UseG1GC -XX:MaxGCPauseMillis=50"
+    - name: S3_ENDPOINT
+      value: "http://minio:9000"
+    - name: S3_ACCESS_KEY
+      valueFrom:
+        secretKeyRef:
+          name: minio-secret
+          key: accesskey
+    - name: S3_SECRET_KEY
+      valueFrom:
+        secretKeyRef:
+          name: minio-secret
+          key: secretkey
+    - name: KAFKA_BROKER
+      value: "kafka:9092"
+    - name: POSTGRES_HOST
+      value: "postgres"
+    - name: POSTGRES_PORT
+      value: "5432"
+    - name: POSTGRES_DB
+      value: "articdbm"
+
+  podTemplate:
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 9999
+        fsGroup: 9999
+
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                    - key: app.kubernetes.io/component
+                      operator: In
+                      values:
+                        - taskmanager
+                topologyKey: kubernetes.io/hostname
+
+      containers:
+        - name: flink-main-container
+          resources:
+            requests:
+              cpu: 1000m
+              memory: 2048Mi
+            limits:
+              cpu: 1000m
+              memory: 2048Mi
+
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: false
+            capabilities:
+              drop:
+                - ALL
+
+          volumeMounts:
+            - name: cache
+              mountPath: /opt/flink/cache
+            - name: tmp
+              mountPath: /tmp
+
+      volumes:
+        - name: cache
+          emptyDir:
+            sizeLimit: 5Gi
+        - name: tmp
+          emptyDir: {}
+
+      nodeSelector:
+        kubernetes.io/os: linux
+
+      tolerations:
+        - key: "node.kubernetes.io/not-ready"
+          operator: "Exists"
+          effect: "NoExecute"
+          tolerationSeconds: 300
+        - key: "node.kubernetes.io/unreachable"
+          operator: "Exists"
+          effect: "NoExecute"
+          tolerationSeconds: 300
+
+  logConfiguration:
+    "rootLogger.level": "INFO"
+    "logger.querymonitor.name": "com.articdbm.stream"
+    "logger.querymonitor.level": "DEBUG"
+
+---
+# Example FlinkSessionJob for interactive SQL queries
+apiVersion: flink.apache.org/v1beta1
+kind: FlinkSessionJob
+metadata:
+  name: articdbm-sql-session
+  namespace: articdbm-bigdata
+  labels:
+    app.kubernetes.io/name: flink
+    app.kubernetes.io/component: session-job
+spec:
+  deploymentName: flink-session-cluster
+
+  job:
+    jarURI: s3a://articdbm-jobs/sql/flink-sql-gateway.jar
+    entryClass: org.apache.flink.table.gateway.SqlGatewayEntry
+    parallelism: 4
+    upgradeMode: stateless
+
+    args:
+      - "--rest.port"
+      - "8083"
+      - "--rest.bind-address"
+      - "0.0.0.0"
+
+---
+# FlinkDeployment for session cluster with SQL support
+apiVersion: flink.apache.org/v1beta1
+kind: FlinkDeployment
+metadata:
+  name: flink-session-cluster
+  namespace: articdbm-bigdata
+  labels:
+    app.kubernetes.io/name: flink
+    app.kubernetes.io/component: session-cluster
+spec:
+  image: flink:1.18.0-scala_2.12-java11
+  imagePullPolicy: IfNotPresent
+  flinkVersion: v1_18
+
+  serviceAccount: flink
+
+  mode: Native
+
+  replicas: 1
+
+  jobManager:
+    replicas: 1
+    resource:
+      memory: "1024m"
+      cpu: 500m
+
+  taskManager:
+    replicas: 2
+    resource:
+      memory: "1024m"
+      cpu: 500m
+
+  configuration:
+    "jobmanager.memory.process.size": "1024m"
+    "taskmanager.memory.process.size": "1024m"
+    "rest.port": "8081"
+    "rest.bind-address": "0.0.0.0"
+    "sql.gateway.enabled": "true"
+    "sql.gateway.bind-address": "0.0.0.0"
+    "sql.gateway.port": "8083"
+
+  podTemplate:
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 9999
+        fsGroup: 9999
+
+      containers:
+        - name: flink-main-container
+          resources:
+            requests:
+              cpu: 500m
+              memory: 1024Mi
+            limits:
+              cpu: 500m
+              memory: 1024Mi
+
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+
+      volumes:
+        - name: tmp
+          emptyDir: {}
+
+      nodeSelector:
+        kubernetes.io/os: linux

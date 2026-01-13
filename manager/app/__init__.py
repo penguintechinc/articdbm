@@ -31,14 +31,22 @@ def _init_pydal_db(app: Flask) -> DAL:
     """
     from app.models.pydal_models import define_models
     from app.models.users import define_user_models
+    from app.models.bigdata_models import define_bigdata_models
+    from app.config import Config
+
+    # Get PyDAL URI at runtime to ensure environment variables are read
+    pydal_uri = Config.get_pydal_uri()
+    logging.info(f"Connecting to database: {pydal_uri.split('@')[-1] if '@' in pydal_uri else 'local'}")
 
     # Use fake_migrate=True to skip actual migration execution
     # Tables are already created, just verify schema
-    db = DAL(app.config['PYDAL_URI'], migrate=True, fake_migrate=True)
+    db = DAL(pydal_uri, migrate=True, fake_migrate=True)
     # Define user models first since other models may reference them
     define_user_models(db)
-    # Then define other models
+    # Then define core models
     define_models(db)
+    # Define big data models (HDFS, Spark, Flink, Trino, HBase, etc.)
+    define_bigdata_models(db)
 
     return db
 
@@ -106,15 +114,25 @@ def create_app(config_name='development'):
         logging.error(f"Could not register auth blueprint: {e}")
         raise
 
-    # Register blueprints from api/v1
-    # TODO: Fix module import paths for API blueprints
-    # try:
-    #     from app.api.v1 import register_blueprints
-    #     register_blueprints(app)
-    # except Exception as e:
-    #     import traceback
-    #     print(f"Warning: Could not register API blueprints: {e}")
-    #     print(traceback.format_exc())
+    # Register Big Data API blueprints
+    # Note: Object storage is managed by NEST project, not ArticDBM
+    try:
+        from app.api.v1.spark import spark_bp
+        from app.api.v1.flink import flink_bp
+        from app.api.v1.trino import trino_bp
+        from app.api.v1.hdfs import hdfs_bp
+        from app.api.v1.hbase import hbase_bp
+        from app.api.v1.iceberg import iceberg_bp
+
+        app.register_blueprint(spark_bp, url_prefix='/api/v1')
+        app.register_blueprint(flink_bp, url_prefix='/api/v1')
+        app.register_blueprint(trino_bp, url_prefix='/api/v1')
+        app.register_blueprint(hdfs_bp, url_prefix='/api/v1')
+        app.register_blueprint(hbase_bp, url_prefix='/api/v1')
+        app.register_blueprint(iceberg_bp, url_prefix='/api/v1')
+        logging.info("Registered Big Data API blueprints")
+    except Exception as e:
+        logging.warning(f"Could not register Big Data blueprints: {e}")
 
     # Health check route
     @app.route('/api/health', methods=['GET'])
@@ -209,6 +227,15 @@ def create_app(config_name='development'):
             'page': 1,
             'page_size': 20
         }), 200
+
+    # Register Database Explorer blueprint
+    try:
+        from app.api.v1.explorer import explorer_bp, init_explorer_service
+        init_explorer_service(db)
+        app.register_blueprint(explorer_bp, url_prefix='/api/v1')
+        logging.info("Registered Database Explorer blueprint")
+    except Exception as e:
+        logging.warning(f"Could not register Database Explorer blueprint: {e}")
 
     # Error handlers
     @app.errorhandler(404)

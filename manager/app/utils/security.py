@@ -15,7 +15,7 @@ from typing import Tuple
 import bcrypt
 from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives import hashes
-from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2
+from cryptography.hazmat.primitives.kdf import pbkdf2
 
 logger = logging.getLogger(__name__)
 
@@ -138,7 +138,7 @@ def _derive_key_from_password(password: str, salt: bytes = None) -> Tuple[bytes,
     if salt is None:
         salt = secrets.token_bytes(16)
 
-    kdf = PBKDF2(
+    kdf = pbkdf2.PBKDF2(
         algorithm=hashes.SHA256(),
         length=32,
         salt=salt,
@@ -233,3 +233,8 @@ def generate_username(prefix: str, length: int = 8) -> str:
     suffix = "".join(secrets.choice(suffix_chars) for _ in range(length))
 
     return f"{prefix}_{suffix}"
+
+
+# Backward compatibility aliases
+encrypt_data = encrypt_sensitive_data
+decrypt_data = decrypt_sensitive_data

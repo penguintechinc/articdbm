@@ -1,0 +1,209 @@
+---
+# Example SparkApplication for batch processing with ArticDBM
+apiVersion: spark.apache.org/v1beta2
+kind: SparkApplication
+metadata:
+  name: articdbm-analytics-job
+  namespace: articdbm-bigdata
+  labels:
+    app.kubernetes.io/name: spark
+    app.kubernetes.io/component: application
+    app.kubernetes.io/version: v1beta2
+spec:
+  type: Python
+  sparkVersion: 3.5.0
+  pythonVersion: "3"
+  mode: cluster
+  image: spark:3.5.0-python3
+  imagePullPolicy: IfNotPresent
+
+  mainApplicationFile: s3a://articdbm-jobs/analytics/query-processor.py
+
+  arguments:
+    - "--database"
+    - "analytics"
+    - "--output-path"
+    - "s3a://articdbm-results/analytics"
+    - "--partitions"
+    - "8"
+
+  sparkConf:
+    spark.sql.shuffle.partitions: "8"
+    spark.sql.adaptive.enabled: "true"
+    spark.sql.adaptive.skewJoin.enabled: "true"
+    spark.driver.maxResultSize: "4g"
+    spark.kryoserializer.buffer.max: "512m"
+    spark.sql.session.timeZone: "UTC"
+    spark.sql.extensions: "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions"
+    spark.sql.catalog.iceberg: "org.apache.iceberg.spark.SparkCatalog"
+    spark.sql.catalog.iceberg.type: "hive"
+    spark.sql.catalog.iceberg.warehouse: "s3a://articdbm-warehouse/iceberg"
+    spark.hadoop.fs.s3a.endpoint: "http://minio:9000"
+    spark.hadoop.fs.s3a.access.key: "minioadmin"
+    spark.hadoop.fs.s3a.secret.key: "minioadmin"
+    spark.hadoop.fs.s3a.path.style.access: "true"
+    spark.hadoop.fs.s3a.impl: "org.apache.hadoop.fs.s3a.S3AFileSystem"
+    spark.executor.memoryOverhead: "512m"
+    spark.driver.memoryOverhead: "512m"
+
+  hadoopConf:
+    fs.s3a.endpoint: "http://minio:9000"
+    fs.s3a.access.key: "minioadmin"
+    fs.s3a.secret.key: "minioadmin"
+    fs.s3a.path.style.access: "true"
+
+  driver:
+    cores: 2
+    memory: "4g"
+    memoryOverhead: "512m"
+    labels:
+      app.kubernetes.io/component: driver
+    securityContext:
+      runAsUser: 1000
+      runAsNonRoot: true
+      fsGroup: 1000
+    env:
+      - name: SPARK_DRIVER_CORES
+        value: "2"
+      - name: SPARK_DRIVER_MEMORY
+        value: "4g"
+      - name: ARTICDBM_DATABASE_HOST
+        value: "postgres"
+      - name: ARTICDBM_DATABASE_PORT
+        value: "5432"
+      - name: ARTICDBM_DATABASE_NAME
+        value: "analytics"
+    volumeMounts:
+      - name: cache-volume
+        mountPath: /spark-cache
+
+  executor:
+    cores: 2
+    memory: "4g"
+    memoryOverhead: "512m"
+    instances: 4
+    labels:
+      app.kubernetes.io/component: executor
+    securityContext:
+      runAsUser: 1000
+      runAsNonRoot: true
+      fsGroup: 1000
+    env:
+      - name: SPARK_EXECUTOR_CORES
+        value: "2"
+      - name: SPARK_EXECUTOR_MEMORY
+        value: "4g"
+    volumeMounts:
+      - name: cache-volume
+        mountPath: /spark-cache
+
+  deps:
+    packages:
+      - "org.apache.iceberg:iceberg-spark-runtime-3.5_2.12:1.4.2"
+      - "org.apache.hadoop:hadoop-aws:3.3.6"
+      - "com.amazonaws:aws-java-sdk-bundle:1.12.529"
+      - "org.apache.commons:commons-pool2:2.11.1"
+    repositories:
+      - "https://repo.maven.apache.org/maven2"
+
+  restartPolicy:
+    type: Never
+    onFailureRetries: 0
+
+  timeToLiveSeconds: 86400
+
+  monitoring:
+    exposeDriverMetrics: true
+    exposeExecutorMetrics: true
+    prometheus:
+      jmxExporterConfig: |
+        lowercaseOutputName: true
+        rules:
+          - pattern: "spark.driver<(.*)>"
+            name: "spark_driver_$1"
+          - pattern: "spark.executor<(.*)>"
+            name: "spark_executor_$1"
+
+  volumes:
+    - name: cache-volume
+      emptyDir:
+        sizeLimit: 10Gi
+
+  nodeSelector:
+    kubernetes.io/os: linux
+
+  affinity:
+    podAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 100
+          podAffinityTerm:
+            labelSelector:
+              matchExpressions:
+                - key: app.kubernetes.io/component
+                  operator: In
+                  values:
+                    - executor
+            topologyKey: kubernetes.io/hostname
+
+---
+# Example ScheduledSparkApplication for periodic analytics
+apiVersion: spark.apache.org/v1beta1
+kind: ScheduledSparkApplication
+metadata:
+  name: articdbm-hourly-aggregation
+  namespace: articdbm-bigdata
+  labels:
+    app.kubernetes.io/name: spark
+    app.kubernetes.io/component: scheduled-application
+spec:
+  schedule: "0 * * * *"
+  timezone: "UTC"
+  concurrencyPolicy: Allow
+  successfulJobsHistoryLimit: 5
+  failedJobsHistoryLimit: 5
+
+  template:
+    type: Python
+    sparkVersion: 3.5.0
+    pythonVersion: "3"
+    mode: cluster
+    image: spark:3.5.0-python3
+    imagePullPolicy: IfNotPresent
+
+    mainApplicationFile: s3a://articdbm-jobs/analytics/hourly-aggregation.py
+
+    arguments:
+      - "--batch-size"
+      - "1000"
+      - "--output-format"
+      - "parquet"
+
+    sparkConf:
+      spark.sql.shuffle.partitions: "4"
+      spark.sql.adaptive.enabled: "true"
+      spark.hadoop.fs.s3a.endpoint: "http://minio:9000"
+      spark.hadoop.fs.s3a.access.key: "minioadmin"
+      spark.hadoop.fs.s3a.secret.key: "minioadmin"
+      spark.hadoop.fs.s3a.path.style.access: "true"
+
+    driver:
+      cores: 1
+      memory: "2g"
+      labels:
+        scheduled: "true"
+
+    executor:
+      cores: 1
+      memory: "2g"
+      instances: 2
+      labels:
+        scheduled: "true"
+
+    restartPolicy:
+      type: OnFailure
+      onFailureRetries: 1
+
+    deps:
+      packages:
+        - "org.apache.iceberg:iceberg-spark-runtime-3.5_2.12:1.4.2"
+        - "org.apache.hadoop:hadoop-aws:3.3.6"

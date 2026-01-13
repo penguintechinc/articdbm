@@ -12,8 +12,8 @@ from typing import Any, Dict, Optional
 import aiohttp
 from pydal import DAL
 
-from manager.app.integrations.elder_client import ElderClient
-from manager.app.models.enums import SyncDirection, SyncStatus
+from app.integrations.elder_client import ElderClient
+from app.models.enums import SyncDirection, SyncStatus
 
 logger = logging.getLogger(__name__)
 

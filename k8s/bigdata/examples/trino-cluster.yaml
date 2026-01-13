@@ -1,0 +1,445 @@
+---
+# Example Trino cluster deployment with ArticDBM integration
+# This demonstrates advanced catalog configuration and performance tuning
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: articdbm-bigdata-examples
+  labels:
+    app.kubernetes.io/name: articdbm
+    app.kubernetes.io/component: bigdata-examples
+
+---
+# ConfigMap for advanced Trino configuration
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: trino-advanced-config
+  namespace: articdbm-bigdata-examples
+  labels:
+    app.kubernetes.io/name: trino
+    app.kubernetes.io/component: coordinator
+data:
+  config.properties: |
+    coordinator=true
+    node-scheduler.include-coordinator=false
+    http-server.http.port=8080
+    http-server.https.enabled=false
+    discovery-server.enabled=true
+    discovery.uri=http://trino-coordinator-advanced:8080
+
+    # Memory configuration
+    query.max-memory=4GB
+    query.max-memory-per-node=1GB
+    query.max-run-time=1h
+    memory.heap-headroom-per-node=2GB
+
+    # Exchange configuration
+    exchange.http-client.max-connections=1024
+    exchange.http-client.connect-timeout=30s
+    exchange.http-client.idle-timeout=5m
+
+    # Execution configuration
+    task.max-drivers-per-task=16
+    task.writer-count=8
+    task.operator-pre-allocation-memory=128MB
+
+    # Scheduling
+    node-scheduler.max-splits-per-node=256
+    node-scheduler.max-pending-splits-per-node=512
+
+    # Catalog dynamic loading
+    catalog.management=dynamic
+
+    # Authentication
+    http-server.authentication.type=password
+    authentication.name-type=UNQUALIFIED
+
+    # Logging
+    event-listener.type=com.facebook.presto.eventlistener.FileEventListenerFactory
+    event-listener.file-path=/var/log/trino/events.json
+
+    # Metrics and monitoring
+    internal-communication.shared-secret=CHANGE_THIS_TO_A_RANDOM_STRING
+
+  jvm.config: |
+    -server
+    -Xmx3G
+    -XX:+UseG1GC
+    -XX:G1HeapRegionSize=32M
+    -XX:+ParallelRefProcEnabled
+    -XX:+UnlockDiagnosticVMOptions
+    -XX:G1SummarizeRSetStatsPeriod=1
+    -XX:+UseStringDeduplication
+    -XX:+ExitOnOutOfMemoryError
+    -XX:+PrintGCDetails
+    -XX:+PrintGCDateStamps
+    -XX:+PrintGCTimeStamps
+    -XX:+PrintTenuringDistribution
+    -XX:+PrintHeapAtGC
+    -XX:+PrintReferenceGC
+    -XX:+PrintCodeCacheStatistics
+    -XX:PrintFLSStatistics=1
+    -Xloggc:/var/log/trino/gc.log
+    -XX:+UseGCLogFileRotation
+    -XX:NumberOfGCLogFiles=32
+    -XX:GCLogFileSize=64m
+    -XX:ErrorFile=/var/log/trino/java_error_%p.log
+    -XX:+HeapDumpOnOutOfMemoryError
+    -XX:HeapDumpPath=/var/log/trino
+    -XX:OnOutOfMemoryError=kill -9 %%p
+    -Djava.awt.headless=true
+
+  log.properties: |
+    com.facebook.presto=INFO
+    com.facebook.presto.security=DEBUG
+    com.facebook.presto.sql=DEBUG
+    io.trino=INFO
+    io.airlift=INFO
+
+---
+# ConfigMap for Trino catalogs
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: trino-advanced-catalogs
+  namespace: articdbm-bigdata-examples
+  labels:
+    app.kubernetes.io/name: trino
+    app.kubernetes.io/component: coordinator
+data:
+  postgresql.properties: |
+    connector.name=postgresql
+    connection-url=jdbc:postgresql://postgres:5432/articdbm
+    connection-user=trino
+    connection-password=password
+    connection-pool.max-size=30
+    connection-pool.idle-time=10m
+    allow-drop-table=true
+
+  mysql.properties: |
+    connector.name=mysql
+    connection-url=jdbc:mysql://mysql:3306/?useUnicode=true&characterEncoding=utf8
+    connection-user=trino
+    connection-password=password
+    connection-pool.max-size=30
+    connection-pool.idle-time=10m
+
+  hive.properties: |
+    connector.name=hive
+    hive.metastore.uri=thrift://metastore:9083
+    hive.hdfs.impersonation.enabled=false
+    hive.storage-format=ORC
+    hive.compression-codec=SNAPPY
+    hive.max-partitions-per-scan=1000000
+    hive.temporary-staging-directory.enabled=true
+    hive.temporary-staging-directory.path=/tmp/hive-staging
+    hive.respect-table-format=true
+    hive.multi-format.enabled=true
+    hive.orc.stripe.cache.enabled=true
+    hive.orc.stripe.cache.size=64MB
+    orc.optimize.stripe.size=true
+    orc.compression=SNAPPY
+    parquet.use-column-names=true
+    parquet.pushdown.filter-engine=PUSHED
+    hive.non-transactional-insert.enabled=true
+
+  iceberg.properties: |
+    connector.name=iceberg
+    iceberg.catalog.type=hive_metastore
+    hive.metastore.uri=thrift://metastore:9083
+    iceberg.catalog.warehouse=s3a://articdbm-warehouse/iceberg
+    s3.endpoint=http://minio:9000
+    s3.access-key=minioadmin
+    s3.secret-key=minioadmin
+    s3.path-style-access=true
+    s3.connection.max-client-retries=3
+    iceberg.register-table-procedure.enabled=true
+    iceberg.projection-pushdown-enabled=true
+    iceberg.parquet-pushdown-filter-enabled=true
+
+  delta.properties: |
+    connector.name=delta_lake
+    hive.metastore.uri=thrift://metastore:9083
+    s3.endpoint=http://minio:9000
+    s3.access-key=minioadmin
+    s3.secret-key=minioadmin
+    s3.path-style-access=true
+
+  kafka.properties: |
+    connector.name=kafka
+    kafka.nodes=kafka:9092
+    kafka.default-schema=default
+    kafka.messages-per-split=100000
+    kafka.table-stats-enabled=true
+
+---
+# Service for Trino Coordinator
+apiVersion: v1
+kind: Service
+metadata:
+  name: trino-coordinator-advanced
+  namespace: articdbm-bigdata-examples
+  labels:
+    app.kubernetes.io/name: trino
+    app.kubernetes.io/component: coordinator
+spec:
+  type: LoadBalancer
+  ports:
+    - port: 8080
+      targetPort: 8080
+      protocol: TCP
+      name: http
+  selector:
+    app.kubernetes.io/name: trino
+    app.kubernetes.io/component: coordinator-advanced
+
+---
+# Service for Trino Workers (headless for StatefulSet)
+apiVersion: v1
+kind: Service
+metadata:
+  name: trino-workers-advanced
+  namespace: articdbm-bigdata-examples
+  labels:
+    app.kubernetes.io/name: trino
+    app.kubernetes.io/component: worker
+spec:
+  type: ClusterIP
+  clusterIP: None
+  ports:
+    - port: 8080
+      targetPort: 8080
+      protocol: TCP
+      name: http
+  selector:
+    app.kubernetes.io/name: trino
+    app.kubernetes.io/component: worker-advanced
+
+---
+# Deployment for Trino Coordinator (Advanced)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: trino-coordinator-advanced
+  namespace: articdbm-bigdata-examples
+  labels:
+    app.kubernetes.io/name: trino
+    app.kubernetes.io/component: coordinator-advanced
+spec:
+  replicas: 1
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: trino
+      app.kubernetes.io/component: coordinator-advanced
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: trino
+        app.kubernetes.io/component: coordinator-advanced
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/metrics"
+    spec:
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              nodeSelectorTerms:
+                - matchExpressions:
+                    - key: node.kubernetes.io/instance-type
+                      operator: In
+                      values:
+                        - compute-optimized
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      containers:
+        - name: trino
+          image: trinodb/trino:431
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          env:
+            - name: NODE_MEMORY
+              value: "3G"
+            - name: NODE_ENVIRONMENT
+              value: "production"
+            - name: CATALOG_MANAGEMENT
+              value: "dynamic"
+          resources:
+            requests:
+              cpu: 2000m
+              memory: 4Gi
+            limits:
+              cpu: 4000m
+              memory: 6Gi
+          livenessProbe:
+            httpGet:
+              path: /v1/status
+              port: 8080
+              scheme: HTTP
+            initialDelaySeconds: 60
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /v1/status
+              port: 8080
+              scheme: HTTP
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 2
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - name: config
+              mountPath: /etc/trino
+            - name: catalogs
+              mountPath: /etc/trino/catalog
+            - name: tmp
+              mountPath: /tmp
+            - name: var
+              mountPath: /var/trino
+            - name: logs
+              mountPath: /var/log/trino
+      volumes:
+        - name: config
+          configMap:
+            name: trino-advanced-config
+        - name: catalogs
+          configMap:
+            name: trino-advanced-catalogs
+        - name: tmp
+          emptyDir: {}
+        - name: var
+          emptyDir: {}
+        - name: logs
+          emptyDir: {}
+
+---
+# StatefulSet for Trino Workers (Advanced)
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: trino-worker-advanced
+  namespace: articdbm-bigdata-examples
+  labels:
+    app.kubernetes.io/name: trino
+    app.kubernetes.io/component: worker-advanced
+spec:
+  serviceName: trino-workers-advanced
+  replicas: 5
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: trino
+      app.kubernetes.io/component: worker-advanced
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: trino
+        app.kubernetes.io/component: worker-advanced
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/metrics"
+    spec:
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchExpressions:
+                  - key: app.kubernetes.io/name
+                    operator: In
+                    values:
+                      - trino
+                  - key: app.kubernetes.io/component
+                    operator: In
+                    values:
+                      - worker-advanced
+              topologyKey: kubernetes.io/hostname
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      containers:
+        - name: trino
+          image: trinodb/trino:431
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          env:
+            - name: NODE_MEMORY
+              value: "3G"
+            - name: NODE_ENVIRONMENT
+              value: "production"
+            - name: DISCOVERY_URI
+              value: "http://trino-coordinator-advanced:8080"
+          resources:
+            requests:
+              cpu: 2000m
+              memory: 4Gi
+            limits:
+              cpu: 4000m
+              memory: 6Gi
+          livenessProbe:
+            httpGet:
+              path: /v1/status
+              port: 8080
+              scheme: HTTP
+            initialDelaySeconds: 60
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /v1/status
+              port: 8080
+              scheme: HTTP
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 2
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - name: config
+              mountPath: /etc/trino
+            - name: catalogs
+              mountPath: /etc/trino/catalog
+            - name: tmp
+              mountPath: /tmp
+            - name: var
+              mountPath: /var/trino
+      volumes:
+        - name: config
+          configMap:
+            name: trino-advanced-config
+        - name: catalogs
+          configMap:
+            name: trino-advanced-catalogs
+        - name: tmp
+          emptyDir: {}
+        - name: var
+          emptyDir: {}

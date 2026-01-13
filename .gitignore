@@ -1,3 +1,4 @@
+.PLAN*
 # *.yaml  # Too broad - commented out
 *secret*.yaml
 *config*.yaml

@@ -16,8 +16,8 @@ from google.protobuf.timestamp_pb2 import Timestamp
 from pydal import DAL
 
 from articdbm import manager_pb2, types_pb2
-from manager.app.grpc.converters import ProtoConverter
-from manager.app.services.licensing import LicenseService
+from app.grpc.converters import ProtoConverter
+from app.services.licensing import LicenseService
 
 logger = logging.getLogger(__name__)
 
