@@ -71,7 +71,6 @@ id_rsa*
 
 # IDE and editor files
 .vscode/
-.claude/
 .idea/
 
 # Project planning and tracking files
