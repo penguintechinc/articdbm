@@ -6,7 +6,7 @@ asyncio==3.4.3
 aioredis==2.0.1
 pydantic==2.5.3
 uvicorn==0.25.0
-python-multipart==0.0.6
+python-multipart==0.0.22
 cryptography==41.0.7
 bcrypt==4.1.2
 pyjwt==2.8.0
